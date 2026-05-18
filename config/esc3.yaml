@@ -1,0 +1,32 @@
+# Config del harness de métricas para Escenario 3 (DoS — Colapso Controlado).
+
+scenario: esc3
+
+pi:
+  host: 192.168.1.10
+  user: raspberry1
+  # password se lee de PI_PASS
+  containers:
+    - esc3-nodered    # dashboard + orquestador
+    - esc3-target     # servidor Flask víctima (5000)
+    - esc3-attacker   # generador asyncio
+    - esc3-proxy      # nginx rate-limiter (fase protección)
+  remote_metrics_dir: /home/raspberry1/tesis_metrics
+  scenario_metrics_out: /home/raspberry1/tesis_escenario3/metrics_out
+  sample_interval_s: 1.0
+
+router:
+  host: 192.168.1.1
+  user: root
+  wifi_iface: phy1-ap0
+  lan_iface: br-lan
+  interval_s: 5.0
+
+load_test:
+  # Mide el knee del esc3-target (servidor Flask síncrono — punto pedagógico del DoS).
+  # Atención: estos rangos PUEDEN tumbar el target. Solo correr en lab, NO durante
+  # la demo pública (que ya genera ataque desde los teléfonos).
+  target: http://192.168.1.10:5000/reservar
+  ramp_concurrency: [5, 10, 20, 50, 100]
+  hold_s_per_step: 30
+  request_timeout_s: 5.0

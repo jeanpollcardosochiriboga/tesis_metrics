@@ -1,0 +1,28 @@
+# Config del harness de métricas para Escenario 2 (phishing simulado Mu1ticines).
+
+scenario: esc2
+
+pi:
+  host: 192.168.1.10
+  user: raspberry1
+  # password se lee de la variable de entorno PI_PASS
+  containers:
+    - jp-esc2-nodered
+  remote_metrics_dir: /home/raspberry1/tesis_metrics
+  scenario_metrics_out: /home/raspberry1/tesis_escenario2/metrics_out
+  sample_interval_s: 1.0
+
+router:
+  host: 192.168.1.1
+  user: root
+  # password se lee de ROUTER_PASS env var
+  wifi_iface: phy1-ap0  # AP 2.4 GHz (OpenWrt moderno)
+  lan_iface: br-lan
+  interval_s: 5.0
+
+load_test:
+  # Mide capacidad del POST /api/reserve (endpoint principal del phishing)
+  target: http://192.168.1.10:1882/
+  ramp_concurrency: [10, 25, 50, 100, 200]
+  hold_s_per_step: 60
+  request_timeout_s: 5.0
