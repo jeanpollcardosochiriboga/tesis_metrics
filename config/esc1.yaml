@@ -1,0 +1,30 @@
+# Config del harness de métricas para Escenario 1 (monitoreo de red).
+# Editado por el operador antes de cada sesión si cambian endpoints o IPs.
+
+scenario: esc1
+
+pi:
+  host: 192.168.1.10
+  user: raspberry1
+  # password se lee de la variable de entorno PI_PASS (no se commitea)
+  containers:
+    - esc1-nodered
+  remote_metrics_dir: /home/raspberry1/tesis_metrics
+  # Path en el host del Pi al directorio bind-mounted /data/metrics_out
+  # (usado para hacer scp del backend_latency.csv y survey.csv)
+  scenario_metrics_out: /home/raspberry1/tesis_escenario1/metrics_out
+  sample_interval_s: 1.0
+
+router:
+  host: 192.168.1.1
+  user: root
+  # password se lee de ROUTER_PASS env var
+  wifi_iface: phy1-ap0  # AP 2.4 GHz (OpenWrt moderno: phyN-apM, no wlanN)
+  lan_iface: br-lan     # interfaz hacia el Pi
+  interval_s: 5.0
+
+load_test:
+  target: http://192.168.1.10:1881/
+  ramp_concurrency: [10, 25, 50, 100, 200]
+  hold_s_per_step: 60
+  request_timeout_s: 5.0

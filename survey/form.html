@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Encuesta — Tesis CEC-EPN</title>
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #fff; --ink: #1a2233; --muted: #5b6478;
+    --accent: #3b6ef5; --border: #dfe4ec;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         background: var(--bg); color: var(--ink); padding: 16px; min-height: 100vh; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 12px; padding: 20px; margin-bottom: 12px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 16px; }
+  .q { font-weight: 600; margin: 0 0 8px; }
+  .scale { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .scale label { flex: 1; min-width: 40px; text-align: center;
+                 border: 1px solid var(--border); border-radius: 8px;
+                 padding: 10px 6px; cursor: pointer; user-select: none;
+                 font-weight: 600; transition: all 0.15s; background: #fff; }
+  .scale input { display: none; }
+  .scale input:checked + label { background: var(--accent); color: #fff;
+                                  border-color: var(--accent); }
+  .ends { display: flex; justify-content: space-between;
+          font-size: 0.78rem; color: var(--muted); margin-top: 6px; }
+  textarea { width: 100%; min-height: 70px; padding: 10px;
+             border: 1px solid var(--border); border-radius: 8px;
+             font: inherit; resize: vertical; }
+  button { width: 100%; padding: 14px; font-size: 1rem; font-weight: 700;
+           background: var(--accent); color: #fff; border: 0; border-radius: 10px;
+           cursor: pointer; margin-top: 6px; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .thanks { text-align: center; padding: 40px 20px; font-size: 1.2rem; }
+  .err { color: #b8233f; font-size: 0.9rem; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="root">
+  <div class="card"><p>Cargando…</p></div>
+</div>
+
+<script>
+(async function() {
+  const root = document.getElementById('root');
+  const TEMPLATE_URL = '/survey_template.json';
+  const SUBMIT_URL = '/api/survey';
+
+  let tpl;
+  try {
+    const r = await fetch(TEMPLATE_URL, { cache: 'no-store' });
+    tpl = await r.json();
+  } catch (e) {
+    root.innerHTML = '<div class="card"><p class="err">No se pudo cargar el formulario.</p></div>';
+    return;
+  }
+
+  const scenario = (new URLSearchParams(location.search)).get('scenario') || '';
+
+  function render() {
+    let html = `<div class="card"><h1>${esc(tpl.title)}</h1>
+      <p class="sub">${esc(tpl.subtitle || '')}</p></div>`;
+    for (const it of tpl.items) {
+      html += '<div class="card">';
+      html += `<p class="q">${esc(it.text)}</p>`;
+      if (it.type === 'likert') {
+        html += '<div class="scale">';
+        for (let n = 1; n <= 5; n++) {
+          html += `<input type="radio" id="${it.id}_${n}" name="${it.id}" value="${n}" ${it.optional ? '' : 'required'}>`;
+          html += `<label for="${it.id}_${n}">${n}</label>`;
+        }
+        html += '</div>';
+        html += `<div class="ends"><span>${esc(it.low || '')}</span><span>${esc(it.high || '')}</span></div>`;
+      } else if (it.type === 'text') {
+        html += `<textarea name="${it.id}" ${it.optional ? '' : 'required'}></textarea>`;
+      }
+      html += '</div>';
+    }
+    html += `<button type="submit">Enviar</button><div class="err" id="err"></div>`;
+    root.innerHTML = `<form id="f">${html}</form>`;
+    document.getElementById('f').addEventListener('submit', onSubmit);
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    const data = { scenario, ts: Date.now() / 1000, answers: {} };
+    for (const it of tpl.items) {
+      const el = document.querySelector(`[name="${it.id}"]:checked`)
+              || document.querySelector(`textarea[name="${it.id}"]`);
+      data.answers[it.id] = el ? el.value : null;
+    }
+    const btn = document.querySelector('button');
+    const err = document.getElementById('err');
+    btn.disabled = true; err.textContent = '';
+    try {
+      const r = await fetch(SUBMIT_URL, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      root.innerHTML = `<div class="card thanks">${esc(tpl.thanks || '¡Gracias!')}</div>`;
+    } catch (e) {
+      btn.disabled = false;
+      err.textContent = 'No se pudo enviar. Intenta de nuevo.';
+    }
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
