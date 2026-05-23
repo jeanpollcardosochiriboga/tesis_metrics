@@ -1,29 +1,39 @@
 {
-  "title": "Cuéntanos tu experiencia",
-  "subtitle": "Toma menos de un minuto — nos ayuda a mejorar el prototipo.",
-  "thanks": "¡Gracias! Tu respuesta fue registrada.",
+  "title": "Encuesta final del prototipo",
+  "subtitle": "Evalúa los tres escenarios en conjunto. Toma menos de un minuto — nos ayuda a cerrar la investigación.",
+  "thanks": "¡Gracias por participar! Tu respuesta quedó registrada.",
   "items": [
-    {"id": "sus1", "type": "likert", "text": "El sistema fue fácil de usar.",
+    {"id": "sus1", "type": "likert", "text": "Los tres escenarios fueron fáciles de seguir.",
      "low": "Muy en desacuerdo", "high": "Muy de acuerdo"},
-    {"id": "sus2", "type": "likert", "text": "Necesitaría apoyo técnico para usar el sistema.",
+    {"id": "sus2", "type": "likert", "text": "Necesité ayuda para entender qué hacer en cada escenario.",
+     "low": "Muy en desacuerdo", "high": "Muy de acuerdo", "inverted": true},
+    {"id": "sus3", "type": "likert", "text": "Los tres escenarios estuvieron bien integrados entre sí.",
      "low": "Muy en desacuerdo", "high": "Muy de acuerdo"},
-    {"id": "sus3", "type": "likert", "text": "Las funciones del sistema están bien integradas.",
+    {"id": "sus4", "type": "likert", "text": "Aprendí rápido qué estaba pasando en cada demostración.",
      "low": "Muy en desacuerdo", "high": "Muy de acuerdo"},
-    {"id": "sus4", "type": "likert", "text": "Aprendí a usar el sistema rápidamente.",
+    {"id": "sus5", "type": "likert", "text": "Me sentí cómodo participando con mi teléfono.",
      "low": "Muy en desacuerdo", "high": "Muy de acuerdo"},
-    {"id": "sus5", "type": "likert", "text": "Me sentí confiado usando el sistema.",
-     "low": "Muy en desacuerdo", "high": "Muy de acuerdo"},
-    {"id": "sus6", "type": "likert", "text": "Tendría que aprender muchas cosas antes de poder usar el sistema.",
-     "low": "Muy en desacuerdo", "high": "Muy de acuerdo"},
-    {"id": "ped1", "type": "likert", "text": "Comprendí lo que el escenario quería mostrar.",
+    {"id": "sus6", "type": "likert", "text": "Tendría que aprender mucho antes de usar algo así.",
+     "low": "Muy en desacuerdo", "high": "Muy de acuerdo", "inverted": true},
+    {"id": "ped1", "type": "likert", "text": "Comprendí los conceptos de ciberseguridad que se mostraron.",
      "low": "Nada", "high": "Totalmente"},
     {"id": "ped2", "type": "likert", "text": "Recomendaría estudiar Ingeniería en Tecnologías de la Información en la EPN.",
      "low": "No la recomendaría", "high": "La recomendaría mucho"},
-    {"id": "mejoras", "type": "text", "text": "¿Qué mejorarías del escenario?", "optional": true},
-    {"id": "libre", "type": "text", "text": "Algún comentario libre", "optional": true}
+    {"id": "mejoras", "type": "text", "text": "¿Qué mejorarías del prototipo en conjunto?", "optional": true},
+    {"id": "libre", "type": "text", "text": "Algún comentario libre (escenario favorito, qué te sorprendió, etc.)", "optional": true}
   ],
   "_meta": {
-    "version": "0.1-draft",
-    "notes": "Items sus1..sus6 son un subset reducido de SUS (Brooke 1996) siguiendo Lewis & Sauro 2017. ped1, ped2 son cualitativas pedagógicas. mejoras, libre son texto libre opcional. El tutor puede editar este archivo para ajustar ítems sin tocar código — el form HTML lo renderiza dinámicamente."
+    "version": "1.0-prototipo",
+    "scope": "prototipo-completo",
+    "delivery": "Esc3 tab 04 — única instancia visible al público; QR de Esc1/Esc2 ocultos",
+    "scoring": {
+      "sus_items": ["sus1", "sus2", "sus3", "sus4", "sus5", "sus6"],
+      "inverted_items": ["sus2", "sus6"],
+      "formula_sus_reducido": "SUS = (sum((5 - x_i) for inverted else (x_i - 1)) / (4 * n_items)) * 100, donde x_i ∈ {1..5}",
+      "ped_items": ["ped1", "ped2"],
+      "nps_item": "ped2",
+      "nps_formula": "promotores = ped2 >= 4, detractores = ped2 <= 2, NPS = (%promo - %detr) — escala 1-5 adaptada"
+    },
+    "notes": "Items sus1..sus6: SUS reducido (Brooke 1996; Lewis & Sauro 2017) reescrito en lenguaje del prototipo. ped1: comprensión conceptual. ped2: intención de recomendar la carrera (proxy NPS pedagógico). mejoras/libre: texto libre opcional. Editar este archivo para ajustar ítems sin tocar código — el form HTML lo renderiza dinámicamente."
   }
 }

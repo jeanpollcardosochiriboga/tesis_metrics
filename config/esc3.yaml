@@ -3,7 +3,7 @@
 scenario: esc3
 
 pi:
-  host: 192.168.1.10
+  host: 127.0.0.1   # harness corre EN el Pi (SSH a sí mismo); requiere self-authorized key
   user: raspberry1
   # password se lee de PI_PASS
   containers:

@@ -1,0 +1,22 @@
+services:
+  ops-console:
+    build: .
+    container_name: tesis-ops-console
+    restart: unless-stopped
+    ports:
+      - "1890:1880"
+    environment:
+      TZ: America/Guayaquil
+      PI_HOST: "192.168.1.10"
+      PI_USER: "raspberry1"
+      ROUTER_HOST: "192.168.1.1"
+      ROUTER_USER: "root"
+    volumes:
+      - ./data:/data
+      # SSH key is read-only; the operator key was created by laptop user
+      # and is already authorized on the Pi. See ./data/ssh/.
+      # Mounted to node-red's home (uid 1000) so the default user can read it.
+      - ./data/ssh:/usr/src/node-red/.ssh:ro
+      # Read-only mount of the metrics repo so flows can reference scripts
+      # without baking them into the image.
+      - ../:/metrics:ro

@@ -4,7 +4,7 @@
 scenario: esc1
 
 pi:
-  host: 192.168.1.10
+  host: 127.0.0.1   # harness corre EN el Pi (SSH a sí mismo); requiere self-authorized key
   user: raspberry1
   # password se lee de la variable de entorno PI_PASS (no se commitea)
   containers:
@@ -24,6 +24,7 @@ router:
   interval_s: 5.0
 
 load_test:
+  # Mide la capacidad de servir HTTP del dashboard de Esc1 (GET a la raíz).
   target: http://192.168.1.10:1881/
   ramp_concurrency: [10, 25, 50, 100, 200]
   hold_s_per_step: 60

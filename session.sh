@@ -21,8 +21,36 @@ read_state() {
     . "$STATE_FILE"
 }
 
-ssh_pi() { SSHPASS="$PI_PASS" sshpass -e ssh -o StrictHostKeyChecking=accept-new "$@"; }
-scp_pi() { SSHPASS="$PI_PASS" sshpass -e scp -o StrictHostKeyChecking=accept-new "$@"; }
+# Use SSH key auth when ~/.ssh/id_ed25519 exists; fall back to sshpass otherwise.
+if [ -f "$HOME/.ssh/id_ed25519" ]; then
+    ssh_pi() { ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes "$@"; }
+    scp_pi() { scp -o StrictHostKeyChecking=accept-new -o BatchMode=yes "$@"; }
+else
+    ssh_pi() { SSHPASS="$PI_PASS" sshpass -e ssh -o StrictHostKeyChecking=accept-new "$@"; }
+    scp_pi() { SSHPASS="$PI_PASS" sshpass -e scp -o StrictHostKeyChecking=accept-new "$@"; }
+fi
+
+# Aborts if Pi<->laptop clock skew > 2 s. Without this, cross-host CSVs
+# (resources.csv from Pi vs router.csv/backend_latency.csv from laptop) cannot
+# be joined on timestamp.
+check_clock_offset() {
+    local pi_user="$1" pi_host="$2" threshold_ms="${3:-2000}"
+    local t1 t2 t3 rtt_ms off_ms
+    t1=$(date +%s.%N)
+    t2=$(ssh_pi -o ConnectTimeout=5 "${pi_user}@${pi_host}" 'date +%s.%N' 2>/dev/null) || {
+        echo "[clock-check] ABORT: SSH to ${pi_user}@${pi_host} failed"; return 1; }
+    t3=$(date +%s.%N)
+    read -r rtt_ms off_ms < <(awk -v t1="$t1" -v t2="$t2" -v t3="$t3" \
+        'BEGIN{ rtt=(t3-t1)*1000; off=(t2-(t1+t3)/2)*1000;
+                printf "%.0f %.0f\n", rtt, (off<0?-off:off) }')
+    echo "[clock-check] Pi=${pi_host} rtt=${rtt_ms}ms |offset|=${off_ms}ms (threshold ${threshold_ms}ms)"
+    if [ "$off_ms" -gt "$threshold_ms" ]; then
+        echo "[clock-check] ABORT: offset > ${threshold_ms}ms — restart chrony on both hosts and retry"
+        echo "             laptop: sudo systemctl restart chrony"
+        echo "             pi:     ssh ${pi_user}@${pi_host} sudo systemctl restart chrony"
+        return 1
+    fi
+}
 
 cmd_start() {
     local scenario="${1:-}"
@@ -30,7 +58,12 @@ cmd_start() {
     local config="$HERE/config/${scenario}.yaml"
     [ -f "$config" ] || { echo "no config: $config"; exit 2; }
 
-    local session_id="${scenario}_$(date +%Y-%m-%d_%H%M)"
+    # Formato de carpeta: fecha_escenario (T7), ej. 2026-05-22_esc1. Si ya existe
+    # una sesión del mismo día y escenario, se desambigua con la hora.
+    local session_id="$(date +%Y-%m-%d)_${scenario}"
+    if [ -e "$HERE/sessions/$session_id" ]; then
+        session_id="${session_id}_$(date +%H%M)"
+    fi
     local sdir="$HERE/sessions/$session_id"
     mkdir -p "$sdir"
 
@@ -40,7 +73,10 @@ cmd_start() {
     pi_user=$(awk '/^pi:/{f=1} f && /^  user:/{print $2; exit}' "$config")
     pi_remote=$(awk '/^pi:/{f=1} f && /^  remote_metrics_dir:/{print $2; exit}' "$config")
     pi_scn_out=$(awk '/^pi:/{f=1} f && /^  scenario_metrics_out:/{print $2; exit}' "$config")
-    containers=$(awk '/^pi:/{f=1} f && /^  containers:/{c=1; next} c && /^    - /{print substr($0,7)} c && /^  [a-z]/{exit}' "$config" | paste -sd,)
+    # Strip the leading "    - " and any inline "# comment" before joining with commas.
+    containers=$(awk '/^pi:/{f=1} f && /^  containers:/{c=1; next} c && /^    - /{print substr($0,7)} c && /^  [a-z]/{exit}' "$config" \
+                 | sed -E 's/[[:space:]]*#.*$//; s/[[:space:]]+$//' \
+                 | paste -sd,)
     wifi_iface=$(awk '/^router:/{f=1} f && /^  wifi_iface:/{print $2; exit}' "$config")
     lan_iface=$(awk '/^router:/{f=1} f && /^  lan_iface:/{print $2; exit}' "$config")
     router_host=$(awk '/^router:/{f=1} f && /^  host:/{print $2; exit}' "$config")
@@ -49,15 +85,22 @@ cmd_start() {
     echo "[start] session $session_id"
     echo "[start] Pi agent on ${pi_user}@${pi_host} containers=${containers}"
 
-    # Launch Pi agent (resources)
+    check_clock_offset "$pi_user" "$pi_host" || { rm -rf "$sdir"; exit 3; }
+
+    # Launch Pi agent (resources). The `(nohup ... &)` subshell + sleep + pgrep
+    # pattern is required so SSH itself doesn't hang waiting for the
+    # background process's pipes to close (well-known SSH gotcha).
+    local pi_session_dir="${pi_remote}/sessions/${session_id}"
     ssh_pi "${pi_user}@${pi_host}" \
-        "mkdir -p ${pi_remote}/sessions/${session_id} && \
-         nohup ${pi_remote}/venv/bin/python ${pi_remote}/bin/collect_resources.py \
-            --output-dir ${pi_remote}/sessions/${session_id} \
+        "mkdir -p ${pi_session_dir} && \
+         sh -c '(nohup ${pi_remote}/venv/bin/python ${pi_remote}/bin/collect_resources.py \
+            --output-dir ${pi_session_dir} \
             --containers ${containers} \
             --interval 1.0 \
-            >${pi_remote}/sessions/${session_id}/agent.log 2>&1 & \
-         echo \$!" > "$sdir/pi_agent.pid"
+            </dev/null >${pi_session_dir}/agent.log 2>&1 &)' && \
+         sleep 0.4 && \
+         pgrep -f \"collect_resources.py.*${session_id}\" | tail -1" \
+        > "$sdir/pi_agent.pid" < /dev/null
     echo "[start] Pi agent PID $(cat "$sdir/pi_agent.pid")"
 
     # Launch router collector (local)
@@ -68,6 +111,29 @@ cmd_start() {
         >"$sdir/router_collector.log" 2>&1 &
     echo $! > "$sdir/router_collector.pid"
     echo "[start] router collector PID $(cat "$sdir/router_collector.pid")"
+
+    # Stream `docker events` from the Pi: container restarts, OOM kills, deaths.
+    # Without this, a crashed container leaves no forensic trace.
+    nohup python3 "$HERE/laptop/docker_events_collector.py" \
+        --output-dir "$sdir" \
+        --pi-user "$pi_user" --pi-host "$pi_host" \
+        >"$sdir/docker_events.log" 2>&1 &
+    echo $! > "$sdir/docker_events.pid"
+    echo "[start] docker events collector PID $(cat "$sdir/docker_events.pid")"
+
+    # Esc3-only: probe target Flask availability (the metric that illustrates
+    # the DoS scenario; the Node-RED middleware instruments the orchestrator,
+    # not the target).
+    if [ "$scenario" = "esc3" ]; then
+        nohup python3 "$HERE/laptop/target_health_probe.py" \
+            --output-dir "$sdir" \
+            --target-url "http://${pi_host}:5000/" \
+            --orchestrator-url "http://${pi_host}:1883" \
+            --interval 1.0 \
+            >"$sdir/target_health.log" 2>&1 &
+        echo $! > "$sdir/target_health.pid"
+        echo "[start] target health probe PID $(cat "$sdir/target_health.pid")"
+    fi
 
     # Write state
     cat > "$STATE_FILE" <<EOF
@@ -99,8 +165,30 @@ cmd_log() {
     read_state
     local event="${1:-}" notes="${2:-}"
     [ -z "$event" ] && { echo "usage: session.sh log <event> [notes]"; exit 2; }
+    # Escape commas/quotes/newlines in notes per CSV rules (RFC 4180).
+    if printf '%s' "$notes" | grep -q '[,"\n]'; then
+        notes='"'"$(printf '%s' "$notes" | sed 's/"/""/g')"'"'
+    fi
     printf "%s,%s,%s\n" "$(date +%s)" "$event" "$notes" >> "$SDIR/events.csv"
     echo "[log] $event ${notes:+\"$notes\"}"
+}
+
+cmd_deploy() {
+    # Mide el tiempo de despliegue (§4.4): levanta el escenario en frío y cronometra
+    # hasta el primer HTTP 200. Requiere una sesión activa (corre `start` primero,
+    # con el escenario aún abajo para que resources.csv capture el arranque).
+    read_state
+    echo "[deploy] midiendo despliegue de $SCENARIO en ${PI_HOST}"
+    PI_PASS="${PI_PASS:-}" python3 "$HERE/laptop/measure_deploy.py" \
+        --scenario "$SCENARIO" \
+        --output-dir "$SDIR" \
+        --pi-host "$PI_HOST" --pi-user "$PI_USER" || \
+        echo "[deploy] la medición falló (ver salida arriba)"
+    # Deja una marca en events.csv con el resultado.
+    if [ -f "$SDIR/deploy.csv" ]; then
+        local last; last=$(tail -1 "$SDIR/deploy.csv")
+        cmd_log deploy_measured "$last"
+    fi
 }
 
 cmd_status() {
@@ -118,7 +206,9 @@ cmd_status() {
         echo "router collector PID (local): $router_pid (NOT running)"
     fi
     echo
-    for f in resources.csv router.csv events.csv backend_latency.csv survey.csv loadtest.csv; do
+    for f in resources.csv router.csv events.csv deploy.csv backend_latency.csv survey.csv loadtest.csv \
+             auditoria_usuarios.csv email_capturas.csv email_envios.csv email_clicks.csv router_devices.csv router_resources.csv \
+             esc3_stats_snapshot.csv target_health.csv docker_events.csv; do
         local p="$SDIR/$f"
         if [ -f "$p" ]; then
             printf "  %-22s %6d rows\n" "$f" "$(wc -l <"$p")"
@@ -139,9 +229,38 @@ cmd_end() {
         echo "[end] stopping router collector ($router_pid)"
         kill -TERM "$router_pid" || true
     fi
+    local target_pid
+    target_pid=$(cat "$SDIR/target_health.pid" 2>/dev/null || echo "")
+    if [ -n "$target_pid" ] && kill -0 "$target_pid" 2>/dev/null; then
+        echo "[end] stopping target health probe ($target_pid)"
+        kill -TERM "$target_pid" || true
+    fi
+    local events_pid
+    events_pid=$(cat "$SDIR/docker_events.pid" 2>/dev/null || echo "")
+    if [ -n "$events_pid" ] && kill -0 "$events_pid" 2>/dev/null; then
+        echo "[end] stopping docker events collector ($events_pid)"
+        kill -TERM "$events_pid" || true
+    fi
     if [ -n "$pi_pid" ]; then
         echo "[end] stopping Pi agent ($pi_pid)"
         ssh_pi "${PI_USER}@${PI_HOST}" "kill -TERM $pi_pid 2>/dev/null || true"
+    fi
+
+    # Pull /api/export_state from the scenario's Node-RED (tables that only
+    # live in flow/global context — Esc1 audit_users, Esc2 reservations+clicks,
+    # Esc3 stats snapshots).
+    local nodered_port
+    case "$SCENARIO" in
+        esc1) nodered_port=1881 ;;
+        esc2) nodered_port=1882 ;;
+        esc3) nodered_port=1883 ;;
+        *)    nodered_port="" ;;
+    esac
+    if [ -n "$nodered_port" ]; then
+        echo "[end] fetching /api/export_state from ${PI_HOST}:${nodered_port}"
+        python3 "$HERE/laptop/fetch_export_state.py" \
+            "http://${PI_HOST}:${nodered_port}" "$SDIR" || \
+            echo "  (export_state fetch failed — scenario may not have the endpoint yet)"
     fi
 
     echo "[end] pulling resources.csv from Pi"
@@ -162,7 +281,9 @@ cmd_end() {
 cmd_status_after() {
     local d="$1"
     echo
-    for f in resources.csv router.csv events.csv backend_latency.csv survey.csv loadtest.csv; do
+    for f in resources.csv router.csv events.csv deploy.csv backend_latency.csv survey.csv loadtest.csv \
+             auditoria_usuarios.csv email_capturas.csv email_envios.csv email_clicks.csv router_devices.csv router_resources.csv \
+             esc3_stats_snapshot.csv target_health.csv docker_events.csv; do
         local p="$d/$f"
         if [ -f "$p" ]; then printf "  %-22s %6d rows\n" "$f" "$(wc -l <"$p")"; fi
     done
@@ -170,8 +291,9 @@ cmd_status_after() {
 
 case "${1:-}" in
     start)   shift; cmd_start "$@" ;;
+    deploy)  cmd_deploy ;;
     log)     shift; cmd_log "$@" ;;
     status)  cmd_status ;;
     end)     cmd_end ;;
-    *) echo "usage: $0 {start <scenario>|log <event> [notes]|status|end}"; exit 2 ;;
+    *) echo "usage: $0 {start <scenario>|deploy|log <event> [notes]|status|end}"; exit 2 ;;
 esac

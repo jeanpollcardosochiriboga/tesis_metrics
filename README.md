@@ -1,91 +1,126 @@
-# tesis/metrics — Harness de medición para §4 del marco teórico
+# tesis/metrics — Harness de medición (§4 del marco teórico)
 
-Recolecta las cuatro familias de métricas del §4 del marco teórico de la tesis CEC-EPN
-(satisfacción, desempeño funcional, consumo de recursos, tiempo de montaje) para cada
-uno de los tres escenarios (Esc1, Esc2, Esc3), uno a la vez.
+Recolecta las métricas del **§4** del marco teórico (satisfacción, desempeño
+funcional, consumo de recursos, tiempo de montaje/despliegue) para los tres
+escenarios, **uno a la vez**.
+
+> **Guía de uso rápido.** El documento conceptual y de auditoría —qué mide cada
+> métrica, por qué se eligió, su veredicto— está en [`METRICAS.md`](METRICAS.md).
 
 ## Arquitectura
 
 ```
 ┌──────────── Pi 3B+ (192.168.1.10) ──────────────┐    ┌───────── Laptop ──────────┐
-│  scenario container (esc1/2/3-nodered, etc.)    │    │                            │
-│     ▲                                            │    │  collect_router.py         │
-│     │ psutil + docker SDK                        │    │   └─ ssh OpenWrt (5 s)     │
-│  collect_resources.py ──► resources.csv          │    │                            │
-│  Node-RED subflow      ──► backend_latency.csv   │    │  loadgen.py                │
-│                                                  │    │   └─ rampa asyncio         │
-└──────────────────────────────────────────────────┘    │                            │
-               │                                        │  session.sh                │
-               │ scp al final de la sesión              │   └─ orquesta todo         │
-               └──────────────────────────────────────► │                            │
-                                                        │  analyze.ipynb             │
+│  contenedores del escenario (escN-nodered, …)   │    │  collect_router.py         │
+│     ▲                                            │    │   └─ ssh OpenWrt (5 s)     │
+│     │ psutil + docker SDK                        │    │  docker_events_collector.py│
+│  collect_resources.py ──► resources.csv          │    │  target_health_probe.py    │
+│  middleware Node-RED   ──► backend_latency.csv   │    │  measure_deploy.py         │
+│  /api/export_state     ──► tablas de dominio     │    │  loadgen.py (solo lab)     │
+└──────────────────────────────────────────────────┘    │  session.sh ── orquesta    │
+               │ scp / fetch al cerrar la sesión        │  plot_scenario.py          │
+               └──────────────────────────────────────► │  analyze.ipynb             │
                                                         └────────────────────────────┘
 ```
 
 ## Outputs por sesión
 
-Una carpeta `sessions/<scenario>_<fecha>_<hhmm>/` con 6 CSVs:
+Una carpeta `sessions/<fecha>_<escenario>/` (ej. `2026-05-22_esc1/`):
 
-| Archivo | Origen | Granularidad |
+| Archivo | Origen | Cadencia |
 |---|---|---|
-| `resources.csv` | psutil + docker SDK en el Pi | 1 sample/s |
-| `router.csv` | ssh al OpenWrt | 1 sample/5s |
-| `backend_latency.csv` | Subflow Node-RED instrumentado | 1 fila/petición |
-| `loadtest.csv` | loadgen.py | 1 fila/escalón de concurrencia |
-| `events.csv` | Anotaciones manuales del operador | discreto |
-| `survey.csv` | POST del form HTML al endpoint /api/survey | 1 fila/encuestado |
+| `resources.csv` | `pi/collect_resources.py` (psutil + docker SDK) | 1/s |
+| `router.csv` | `laptop/collect_router.py` (tráfico agregado) | 1/5s |
+| `router_devices.csv` | `collect_router.py` (MAC/IP/hostname por equipo) | 1/5s |
+| `router_resources.csv` | `collect_router.py` (CPU/RAM del router) | 1/5s |
+| `backend_latency.csv` | middleware Node-RED (`metrics_middleware.js`) | 1/petición |
+| `deploy.csv` | `laptop/measure_deploy.py` | 1/despliegue |
+| `target_health.csv` | `laptop/target_health_probe.py` (solo Esc3) | 1/s |
+| `docker_events.csv` | `laptop/docker_events_collector.py` | por evento |
+| `loadtest.csv` | `laptop/loadgen.py` (solo lab) | 1/escalón |
+| `survey.csv` | form HTML → `/api/survey` | 1/encuestado |
+| `events.csv` | `session.sh log` (anotaciones del operador) | discreto |
+| tablas de dominio | `fetch_export_state.py` ← `/api/export_state` (al cerrar) | 1 vez |
 
-## Uso rápido
+## Uso por sesión
+
+Primero **dejar desplegado solo el escenario a medir** (bajar los otros dos en el Pi).
 
 ```bash
-# Primera vez: instalar agente en el Pi
-./pi/install.sh raspberry1@192.168.1.10
+# Variables PI_PASS y ROUTER_PASS en .env
+./session.sh start esc1     # arranca colectores (escenario aún abajo)
+./session.sh deploy         # mide tiempo de despliegue en frío -> deploy.csv
+# El montaje físico (conectar router+Pi+laptop) se mide con cronómetro y se anota:
+./session.sh log montaje_fisico_s 95
+# ... corre la demo ...
+./session.sh log primer_usuario
+./session.sh status         # muestra colectores activos y filas por CSV
+./session.sh end            # detiene todo, hace scp + fetch de tablas de dominio
+```
 
-# Por cada sesión:
-./session.sh start esc1                       # arranca todo en paralelo
-./session.sh log first_user                   # anota evento durante demo
-./session.sh log demo_end
-./session.sh end                              # detiene, hace scp del CSV del Pi
+Pruebas de carga sintética (**solo en laboratorio**, nunca en demo pública):
 
-# Pruebas de carga sintética (solo en lab):
-python3 laptop/loadgen.py --config config/esc1.yaml --session sessions/<id>/
+```bash
+python3 laptop/loadgen.py --config config/esc1.yaml --output-dir sessions/<id>/
+```
 
-# Análisis:
+## Análisis y gráficas
+
+```bash
+# Gráfica de recursos por escenario (eje X = tiempo, eje Y = consumo):
+python3 plot_scenario.py sessions/2026-05-22_esc1
+
+# Consolidado comparativo de los 3 escenarios:
+python3 plot_scenario.py --general sessions/2026-05-22_esc1 \
+    sessions/2026-05-22_esc2 sessions/2026-05-22_esc3 --out-dir sessions/
+
+# Análisis completo (tablas + gráficos del capítulo de Resultados):
 jupyter notebook analyze.ipynb
 ```
 
+## Modos de sesión
+
+- **`session.sh`** (este flujo) — mide **un escenario a fondo**, incluidas las tablas
+  de dominio (auditoría Esc1, correos Esc2, atacantes Esc3). **Es el que produce datos
+  analizables.**
+- **`presentation.sh`** — monitor continuo de recursos para toda una jornada; **no**
+  captura tablas de dominio. Ver la comparación en [`METRICAS.md` §7](METRICAS.md).
+
 ## Filosofía
 
-- **Mediciones reales, no simuladas**: psutil lee `/proc`; httpx hace HTTP real; Node-RED
-  mide `Date.now()` en el handler real del request.
-- **Mínimo riesgo de errores**: bibliotecas estándar (psutil, httpx, asyncio, pandas);
-  sin parsear stdout; CSVs append-only; sin systemd; sin DB.
-- **Cero contenedores nuevos en el Pi**: el agente es un proceso Python suelto bajo `nohup`.
+- **Mediciones reales, no simuladas**: psutil lee `/proc`; httpx hace HTTP real;
+  Node-RED mide en el handler verdadero; el router responde por SSH.
+- **Mínimo riesgo de error**: bibliotecas estándar (psutil, httpx, asyncio, pandas);
+  CSVs append-only; sin DB; el agente del Pi es un proceso suelto bajo `nohup`.
+- **Reloj sincronizado**: `session.sh` aborta si el offset Pi↔laptop supera 2 s, para
+  poder unir CSVs de ambos hosts por timestamp.
 
 ## Estructura
 
 ```
 metrics/
-├── README.md
-├── requirements.txt
-├── session.sh                       # orquestador (start/log/end)
+├── README.md                  # esta guía
+├── METRICAS.md                # documento conceptual + auditoría
+├── session.sh                 # orquestador (start/deploy/log/status/end)
+├── presentation.sh            # monitor continuo de jornada
+├── plot_scenario.py           # gráficas por escenario + consolidado
+├── executive_report.py        # informe ejecutivo PDF (modo presentación)
+├── analyze.ipynb              # análisis del §4
 ├── pi/
-│   ├── collect_resources.py         # corre en el Pi
-│   └── install.sh                   # despliega script + venv al Pi
+│   ├── collect_resources.py   # corre en el Pi
+│   └── install.sh             # despliega agente + venv al Pi
 ├── laptop/
-│   ├── collect_router.py            # ssh OpenWrt
-│   ├── loadgen.py                   # rampa asyncio
-│   └── pull_pi_csv.sh               # scp del CSV del Pi
+│   ├── collect_router.py      # tráfico + dispositivos + recursos del router
+│   ├── measure_deploy.py      # tiempo de despliegue (compose up -> HTTP 200)
+│   ├── target_health_probe.py # disponibilidad del target (Esc3)
+│   ├── docker_events_collector.py
+│   ├── fetch_export_state.py  # tablas de dominio
+│   └── loadgen.py             # rampa de carga sintética (solo lab)
 ├── flows_patch/
-│   └── esc1_latency_nodes.json      # subflow Node-RED para latencia
+│   └── metrics_middleware.js  # latencia backend en Node-RED
 ├── survey/
-│   ├── survey_template.json         # 10 preguntas (editables por tutor)
-│   ├── form.html                    # renderiza el template
-│   └── api_survey.md                # spec del endpoint POST /api/survey
-├── config/
-│   ├── esc1.yaml
-│   ├── esc2.yaml
-│   └── esc3.yaml
-├── sessions/                        # outputs (gitignored)
-└── analyze.ipynb                    # tablas y gráficos del §4
+│   ├── survey_template.json   # encuesta global (editable sin tocar código)
+│   └── form.html
+├── config/{esc1,esc2,esc3}.yaml
+└── sessions/                  # outputs (gitignored)
 ```

@@ -3,7 +3,7 @@
 scenario: esc2
 
 pi:
-  host: 192.168.1.10
+  host: 127.0.0.1   # harness corre EN el Pi (SSH a sí mismo); requiere self-authorized key
   user: raspberry1
   # password se lee de la variable de entorno PI_PASS
   containers:
@@ -21,7 +21,10 @@ router:
   interval_s: 5.0
 
 load_test:
-  # Mide capacidad del POST /api/reserve (endpoint principal del phishing)
+  # Mide la capacidad de servir HTTP del dashboard (GET a la raíz). NO se apunta a
+  # POST /api/reserve a propósito: ese endpoint espera 10 s y dispara envío de correo
+  # por SMTP (ver CLAUDE.md), así que un load test mandaría cientos de correos reales
+  # y mediría el delay artificial, no la capacidad del servidor.
   target: http://192.168.1.10:1882/
   ramp_concurrency: [10, 25, 50, 100, 200]
   hold_s_per_step: 60

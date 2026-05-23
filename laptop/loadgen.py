@@ -63,12 +63,14 @@ async def _run_stage(target: str, concurrency: int, hold_s: float, timeout: floa
     ts_end = time.time()
     dur = max(ts_end - ts_start, 1e-3)
     total_req = len(latencies) + len(errors)
+    err_rate = (len(errors) / total_req) if total_req else 0.0
     return {
         "ts_start": round(ts_start, 3),
         "ts_end": round(ts_end, 3),
         "concurrency": concurrency,
         "requests": total_req,
         "errors": len(errors),
+        "error_rate": round(err_rate, 4),
         "rps": round(total_req / dur, 2),
         "latency_p50_ms": round(_pct(latencies, 50), 1) if latencies else 0.0,
         "latency_p95_ms": round(_pct(latencies, 95), 1) if latencies else 0.0,
@@ -107,8 +109,14 @@ def main():
     csv_path = out_dir / "loadtest.csv"
     is_new = not csv_path.exists()
 
-    fieldnames = ["ts_start", "ts_end", "concurrency", "requests", "errors", "rps",
-                  "latency_p50_ms", "latency_p95_ms", "latency_p99_ms", "latency_max_ms"]
+    # 'knee' = primer escalón que degrada el servicio: error_rate > 1% o p95 > 1 s
+    # (criterio del §4.2b del marco). Se marca aquí, junto al CSV, no solo en el notebook.
+    KNEE_ERR_RATE = 0.01
+    KNEE_P95_MS = 1000.0
+    fieldnames = ["ts_start", "ts_end", "concurrency", "requests", "errors",
+                  "error_rate", "rps", "latency_p50_ms", "latency_p95_ms",
+                  "latency_p99_ms", "latency_max_ms", "knee"]
+    knee_found = False
     with open(csv_path, "a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         if is_new:
@@ -117,10 +125,19 @@ def main():
         for c in ramp:
             print(f"[loadgen] stage c={c} hold={hold}s target={target}")
             row = asyncio.run(_run_stage(target, int(c), hold, timeout))
-            print(f"          rps={row['rps']} err={row['errors']}"
-                  f" p50={row['latency_p50_ms']}ms p95={row['latency_p95_ms']}ms")
+            is_knee = (not knee_found and
+                       (row["error_rate"] > KNEE_ERR_RATE or
+                        row["latency_p95_ms"] > KNEE_P95_MS))
+            row["knee"] = "true" if is_knee else "false"
+            if is_knee:
+                knee_found = True
+            print(f"          rps={row['rps']} err_rate={row['error_rate']}"
+                  f" p50={row['latency_p50_ms']}ms p95={row['latency_p95_ms']}ms"
+                  f"{'  <-- KNEE' if is_knee else ''}")
             w.writerow(row)
             f.flush()
+    if not knee_found:
+        print("[loadgen] no se alcanzó el knee en la rampa (servidor no degradó).")
 
 
 if __name__ == "__main__":

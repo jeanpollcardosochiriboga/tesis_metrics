@@ -8,6 +8,64 @@ del §4 del marco teórico y obtener el informe ejecutivo al final.
 
 ---
 
+## Hallazgos del ensayo del 2026-05-18 — LEER ANTES DE LA DEMO
+
+Tras el ensayo en casa con 3 dispositivos (Pato, Pame, Jean Poll), salieron 3 bugs que **DEBEN arreglarse o documentarse antes del miércoles**. Las métricas del harness sí se capturaron correctamente en los 3 escenarios — los bugs son del UX de los escenarios, no del harness.
+
+### Bug 1 (CRÍTICO, ARREGLADO) — `BASE_URL` del Pi apuntaba al laptop
+Esc2 generaba QR con `http://192.168.1.20:1882` (laptop) en lugar de `http://192.168.1.10:1882` (Pi). Los emails de los alumnos hubieran sido procesados por el escenario que corre en la **laptop**, no por el que mide el harness — y todos los dashboards del Pi habrían quedado en cero.
+
+**Fix aplicado**: `sed -i "s|^BASE_URL=.*|BASE_URL=http://192.168.1.10:1882|" ~/tesis_escenario2/.env` en el Pi, restart de Esc2.
+
+**Verificación pre-clase**: `ssh raspberry1@192.168.1.10 'grep BASE_URL ~/tesis_escenario2/.env'` debe mostrar `192.168.1.10:1882`. Igualmente verificar en Esc3 que cualquier URL exterior apunte al Pi.
+
+### Bug 2 (CRÍTICO, FIX PENDIENTE PARA EL MIÉRCOLES TEMPRANO) — botón móvil de Esc3 no dispara flood real
+El botón "ATACAR" en la página móvil de los teléfonos (`http://192.168.1.10:1883/`) solo incrementa `flow.pressCount` (efecto visual + animación), pero **NO gatilla el `esc3-attacker` asyncio**. El único botón que dispara flood real al target es el botón "ATACAR" del dashboard del operador (`/ui` tab "01 - Ataque").
+
+Durante la demo del miércoles, si los 20 alumnos solo presionan en sus celulares, el target Flask NO va a colapsar — verán contador subiendo pero el servidor seguirá respondiendo OK. Pedagógicamente queda flojo.
+
+**Fix sugerido**: en `tesis_escenario3/flows.json`, conectar el endpoint `/api/attack/press` (que reciben los teléfonos) al mismo `function` que arranca el ataque cuando se pulsa el botón del operador. O configurarlo para que cada press del teléfono haga `pressCount % 5 == 0 → start_attack`. Revisar el cableado del nodo "Pre-start" en el flow.
+
+**Mitigación si no hay tiempo**: tú como operador pulsas "ATACAR" desde el dashboard al mismo tiempo que los alumnos presionan en sus teléfonos. El público no se entera.
+
+### Bug 3 (NO CRÍTICO) — DNS tracking de Esc1 no muestra qué sitios visitan
+Esc1 detecta los dispositivos (nmap funciona) pero el panel "Sitio:" siempre dice "En espera de tráfico…". El router tiene la config UCI correcta (`dhcp.@dnsmasq[0].logqueries=1`, `system.log_remote=1`, `log_ip=192.168.1.10`, `log_port=5515`, `log_proto=udp`) y el Pi escucha en UDP 5515 — pero ningún paquete llega.
+
+Causas posibles (no diagnosticadas a fondo): (a) clientes Android modernos usan DoH/DoT y no consultan al router; (b) el syslog daemon de OpenWrt no está forwardeando las queries de dnsmasq (incluso `logger -t test` desde el router no llegó al Pi).
+
+**Mitigación**: durante la demo, presentar Esc1 enfocándose en el **descubrimiento de dispositivos** y la **auditoría de usuarios registrados** (esos sí funcionan). El "qué sitio visita" queda como feature deshabilitada — no hace falta mencionarla.
+
+**Fix futuro**: agregar al `/etc/init.d/log` del router un `option facility 'daemon'` explícito en system, y/o forzar dnsmasq a usar `log-facility=DAEMON.NOTICE`. Probar con `logger -p daemon.notice "test"` y `tcpdump -ni eth0 udp port 5515` desde el Pi (necesita `apt install tcpdump` en el Pi primero).
+
+### Bug 4 (MENOR) — `email_envios.csv` siempre vacío
+El export_state filtra `reservations.filter(r => r.sent)`, pero el flow original de Esc2 nunca setea `r.sent = true` después del envío SMTP. El email se envía OK; el harness solo no lo registra como "envío".
+
+**Fix sugerido**: en el function node "Enviar correo" de Esc2 flows.json, después del envío exitoso, encontrar la reservación correspondiente y setear `r.sent = true; r.sentTs = Date.now()/1000`. Actualizar `flow.reservations`.
+
+**Mitigación**: el reporte usa el conteo de capturas como proxy de envíos (capturas = envíos intentados = envíos exitosos en práctica). Click-through-rate sigue siendo correcto.
+
+### Bug 5 (MENOR) — `auditoria_usuarios.csv` sin timestamp epoch
+La tabla del dashboard de Esc1 guarda fechas como `"9:01:42 p. m."` (string formateado), no epoch. El notebook salta gracefully ("Sin auditoria_usuarios.csv (escenario distinto o usuarios no registrados)") porque busca columna `ts`.
+
+**Fix sugerido**: en el function node "Tabla de alias" de Esc1, agregar `ts: Date.now()/1000` al objeto guardado en `global.audit_users`.
+
+### Bug 6 (PROCEDURAL) — `esc3_snapshots` se acumula entre sesiones
+El array `global.esc3_snapshots` no se limpia al iniciar nueva sesión de métricas. Si corres `session.sh start esc3` dos veces sin restartear el contenedor, el segundo CSV incluye datos del primero.
+
+**Workaround procedural**: antes de cada `session.sh start esc3`, hacer `ssh raspberry1@192.168.1.10 'docker restart esc3-nodered'` para limpiar contexto.
+
+### Validación de métricas del ensayo (que sí funcionaron bien)
+
+| Escenario | Filas en CSVs principales | Hallazgo cuantitativo |
+|---|---|---|
+| Esc1 (9 min, 5 dispositivos) | resources 554, router 60, backend_latency 4417, auditoria_usuarios 3 | CPU host avg ~7%, pico 16% — el Pi 3B+ va sobrado para Esc1 |
+| Esc2 (13 min, 3 emails) | resources 766, router 123, backend_latency 10, email_capturas 3, email_clicks 2 | CTR = 67% (2 de 3 clickearon el enlace educativo) |
+| Esc3 (13 min, 3 atacantes desde celular + flood del operador) | resources 493, target_health 702, esc3_stats_snapshot 160, survey 4 respuestas | **Disponibilidad: 98.5% (idle) → 0% (ataque) → 58% (protegido)**. Mann-Whitney `idle vs ataque` p=2.86e-31, `ataque vs protegido` p=4.77e-05 — todo estadísticamente significativo |
+
+El `target_health_probe.py` demostró objetivamente lo que el dashboard del operador NO muestra: durante el ataque (con el botón del operador), el target Flask cae a **0% disponibilidad** durante ~50 segundos. La protección con nginx rate-limit lo recupera al ~58%.
+
+---
+
 ## 30 minutos ANTES de la clase — preparación
 
 ### 1. Red del aula
@@ -23,9 +81,36 @@ del §4 del marco teórico y obtener el informe ejecutivo al final.
 ping -c 2 192.168.1.10   # Pi
 ping -c 2 192.168.1.1    # Router
 
-# Si el router rechaza ssh con "Connection reset" (dropbear blacklist), reinícialo:
-ssh root@192.168.1.1 '/etc/init.d/dropbear restart'
+# SSH al Pi (sin password gracias a la llave ed25519 instalada el 2026-05-18):
+ssh raspberry1@192.168.1.10 'date; uptime'
+
+# Si el router rechaza ssh con "Connection reset" (dropbear blacklist o rate limit):
+sshpass -p 'DTIC2025B_jp' ssh -o KexAlgorithms=+diffie-hellman-group14-sha1 \
+    -o HostKeyAlgorithms=+ssh-rsa root@192.168.1.1 '/etc/init.d/dropbear restart'
+# (las opciones de algoritmo legacy son necesarias para el dropbear del Archer C7)
 ```
+
+### 2.5. Verificación de reloj sincronizado (chrony)
+```bash
+chronyc tracking | grep "Leap status"    # debe decir Normal
+ssh raspberry1@192.168.1.10 'chronyc sources | head -3'
+# El Pi debe tener al laptop (192.168.1.20) marcado con '^*' o '^+' como source.
+# Sin esto, los CSVs cruzados (Pi vs laptop) no son joinables por timestamp,
+# y session.sh start abortará si offset > 2s.
+```
+
+### 2.6. Verificación de .env del Pi (los 3 escenarios)
+**Hallazgo del ensayo**: el `.env` de Esc1 estaba ausente y el `BASE_URL` de Esc2 apuntaba al laptop. Verificar:
+```bash
+ssh raspberry1@192.168.1.10 '
+  ls ~/tesis_escenario1/.env ~/tesis_escenario2/.env ~/tesis_escenario3/.env 2>&1
+  echo "--- Esc2 BASE_URL ---"
+  grep BASE_URL ~/tesis_escenario2/.env
+  echo "--- Esc1 DASH_IP/MY_PC_IP ---"
+  grep -E "DASH_IP|MY_PC_IP" ~/tesis_escenario1/.env
+'
+```
+Salida esperada: los 3 .env existen, `BASE_URL=http://192.168.1.10:1882`, `DASH_IP=192.168.1.10`, `MY_PC_IP=192.168.1.20`.
 
 ### 3. Verificación del harness
 ```bash
@@ -125,27 +210,33 @@ ssh raspberry1@192.168.1.10 'cd ~/tesis_escenario<N>* && docker compose down'
 
 ---
 
-## DESPUÉS DE LA CLASE — generar el informe
+## DESPUÉS DE LA CLASE — generar el informe + PDF
+
+Para cada una de las 3 sesiones, generar el reporte `.md` y el `.pdf`:
 
 ```bash
 cd ~/tesis/metrics
-.venv/bin/jupyter notebook analyze.ipynb
-# o sin abrir UI:
-.venv/bin/jupyter nbconvert --to notebook --execute analyze.ipynb \
-    --output analyze_executed.ipynb
+for SESSION in sessions/esc1_*_<fecha> sessions/esc2_*_<fecha> sessions/esc3_*_<fecha>; do
+  SESSION_DIR_OVERRIDE="$SESSION" .venv/bin/jupyter nbconvert --to notebook --execute analyze.ipynb \
+      --output "/tmp/analyze_$(basename $SESSION).ipynb" \
+      --ExecutePreprocessor.timeout=180
+  ./make_pdf.sh "$SESSION"
+done
 ```
 
-El notebook por defecto procesa la **sesión más reciente**. Si quieres una específica,
-edita `SESSION_DIR` en la segunda celda.
+(La variable `SESSION_DIR_OVERRIDE` fue añadida al notebook el 2026-05-18 para procesar sesiones específicas en batch sin editar a mano.)
 
 **Salida** en `sessions/esc<N>_<fecha>_<hhmm>/`:
-- `report_<id>.md` — informe ejecutivo con 5 tablas + 5 plots (cita directa al
-  capítulo de Resultados de la tesis)
-- `plots/01_*.png` … `05_*.png` — figuras de alta resolución
-- 6 CSVs crudos como anexo / evidencia
+- `report_<id>.md` — informe en markdown con 13 secciones (resumen, recursos, latencia, encuesta, target_health, RX/TX, adopción, funnel, eventos docker, análisis estadístico Mann-Whitney + IC, glosario)
+- `reporte_<id>.pdf` — versión PDF con plantilla eisvogel (portada, índice, lang=es)
+- `plots/*.png` — hasta 10 figuras de alta resolución
+- ~10 CSVs crudos como anexo / evidencia
 
-Repite para cada uno de los 3 escenarios. Al final tendrás 3 carpetas de sesión,
-3 reportes markdown, 15 plots.
+Repite para cada uno de los 3 escenarios. Al final tendrás 3 carpetas de sesión, 3 reportes markdown, 3 PDFs, ~30 plots.
+
+### Tip: ops-console wizard
+
+Mientras corres la demo, la **ops-console** está en `http://localhost:1890/ui` (contenedor Docker en la laptop, `~/tesis/metrics/ops-console/`). Tiene 3 botones grandes para apagar/encender escenarios en el Pi vía SSH + 1 botón PANIC rojo + tab "Avanzado" con controles granulares. Útil como red de seguridad si la terminal falla.
 
 ---
 

@@ -1,0 +1,1062 @@
+[
+    {
+        "id": "demo_tab",
+        "type": "tab",
+        "label": "Demo (wizard)",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "adv_tab",
+        "type": "tab",
+        "label": "Avanzado",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "ui_demo",
+        "type": "ui_tab",
+        "name": "Demo",
+        "icon": "play_arrow",
+        "order": 1,
+        "disabled": false,
+        "hidden": false
+    },
+    {
+        "id": "ui_adv",
+        "type": "ui_tab",
+        "name": "Avanzado",
+        "icon": "settings",
+        "order": 2,
+        "disabled": false,
+        "hidden": false
+    },
+    {
+        "id": "g_demo_btns",
+        "type": "ui_group",
+        "name": "Iniciar / Detener demo",
+        "tab": "ui_demo",
+        "order": 1,
+        "disp": true,
+        "width": "12",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "g_demo_status",
+        "type": "ui_group",
+        "name": "Estado del Pi",
+        "tab": "ui_demo",
+        "order": 2,
+        "disp": true,
+        "width": "12",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "g_demo_out",
+        "type": "ui_group",
+        "name": "Último comando",
+        "tab": "ui_demo",
+        "order": 3,
+        "disp": true,
+        "width": "12",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "g_adv_e1",
+        "type": "ui_group",
+        "name": "Escenario 1",
+        "tab": "ui_adv",
+        "order": 1,
+        "disp": true,
+        "width": "6",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "g_adv_e2",
+        "type": "ui_group",
+        "name": "Escenario 2",
+        "tab": "ui_adv",
+        "order": 2,
+        "disp": true,
+        "width": "6",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "g_adv_e3",
+        "type": "ui_group",
+        "name": "Escenario 3",
+        "tab": "ui_adv",
+        "order": 3,
+        "disp": true,
+        "width": "6",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "g_adv_status",
+        "type": "ui_group",
+        "name": "Estado",
+        "tab": "ui_adv",
+        "order": 4,
+        "disp": true,
+        "width": "6",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "g_adv_out",
+        "type": "ui_group",
+        "name": "Último comando",
+        "tab": "ui_adv",
+        "order": 5,
+        "disp": true,
+        "width": "12",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "fmt_out",
+        "type": "function",
+        "z": "demo_tab",
+        "name": "format last-output",
+        "func": "const txt = (msg.payload || '').toString().trim() || '(sin salida)';\nconst ts  = new Date().toLocaleTimeString();\nreturn { payload: `[${ts}]\\n${txt}` };\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "wires": [
+            [
+                "txt_demo_out",
+                "txt_adv_out"
+            ]
+        ]
+    },
+    {
+        "id": "fmt_status",
+        "type": "function",
+        "z": "demo_tab",
+        "name": "extract running scenario",
+        "func": "const out = (msg.payload || '').toString();\nconst lines = out.split(/\\n/).map(s => s.trim()).filter(Boolean);\nlet scn = '(ninguno)';\nif (lines.some(l => l.startsWith('esc1-'))) scn = 'esc1';\nelse if (lines.some(l => l.startsWith('esc2-') || l.startsWith('jp-esc2-'))) scn = 'esc2';\nelse if (lines.some(l => l.startsWith('esc3-'))) scn = 'esc3';\nconst ts = new Date().toLocaleTimeString();\nreturn { payload: `${ts}  \\u2022  escenario activo: ${scn}\\n${lines.join('\\n')}` };\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "wires": [
+            [
+                "txt_demo_status",
+                "txt_adv_status"
+            ]
+        ]
+    },
+    {
+        "id": "txt_demo_status",
+        "type": "ui_text",
+        "z": "demo_tab",
+        "group": "g_demo_status",
+        "order": 1,
+        "width": "12",
+        "height": "4",
+        "name": "demo status",
+        "label": "",
+        "format": "<pre style='white-space:pre-wrap;margin:0'>{{msg.payload}}</pre>",
+        "layout": "row-spread",
+        "className": ""
+    },
+    {
+        "id": "txt_demo_out",
+        "type": "ui_text",
+        "z": "demo_tab",
+        "group": "g_demo_out",
+        "order": 1,
+        "width": "12",
+        "height": "6",
+        "name": "demo out",
+        "label": "",
+        "format": "<pre style='white-space:pre-wrap;margin:0;font-size:11px'>{{msg.payload}}</pre>",
+        "layout": "row-spread",
+        "className": ""
+    },
+    {
+        "id": "txt_adv_status",
+        "type": "ui_text",
+        "z": "demo_tab",
+        "group": "g_adv_status",
+        "order": 1,
+        "width": "6",
+        "height": "4",
+        "name": "adv status",
+        "label": "",
+        "format": "<pre style='white-space:pre-wrap;margin:0'>{{msg.payload}}</pre>",
+        "layout": "row-spread",
+        "className": ""
+    },
+    {
+        "id": "txt_adv_out",
+        "type": "ui_text",
+        "z": "demo_tab",
+        "group": "g_adv_out",
+        "order": 1,
+        "width": "12",
+        "height": "6",
+        "name": "adv out",
+        "label": "",
+        "format": "<pre style='white-space:pre-wrap;margin:0;font-size:11px'>{{msg.payload}}</pre>",
+        "layout": "row-spread",
+        "className": ""
+    },
+    {
+        "id": "btn_demo_e1",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "INICIAR DEMO ESC1",
+        "group": "g_demo_btns",
+        "order": 1,
+        "width": "4",
+        "height": "3",
+        "passthru": false,
+        "label": "INICIAR DEMO ESC1",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#1e88e5",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "INICIAR DEMO ESC1",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_demo_e1_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_demo_e1_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "INICIAR DEMO ESC1",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario2/docker-compose.yml down ; docker compose -f /home/raspberry1/tesis_escenario3/docker-compose.yml down ; docker compose -f /home/raspberry1/tesis_escenario1/docker-compose.yml up -d ; sleep 2; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_demo_e2",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "INICIAR DEMO ESC2",
+        "group": "g_demo_btns",
+        "order": 2,
+        "width": "4",
+        "height": "3",
+        "passthru": false,
+        "label": "INICIAR DEMO ESC2",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#1e88e5",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "INICIAR DEMO ESC2",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_demo_e2_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_demo_e2_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "INICIAR DEMO ESC2",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario1/docker-compose.yml down ; docker compose -f /home/raspberry1/tesis_escenario3/docker-compose.yml down ; docker compose -f /home/raspberry1/tesis_escenario2/docker-compose.yml up -d ; sleep 2; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_demo_e3",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "INICIAR DEMO ESC3",
+        "group": "g_demo_btns",
+        "order": 3,
+        "width": "4",
+        "height": "3",
+        "passthru": false,
+        "label": "INICIAR DEMO ESC3",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#1e88e5",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "INICIAR DEMO ESC3",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_demo_e3_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_demo_e3_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "INICIAR DEMO ESC3",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario1/docker-compose.yml down ; docker compose -f /home/raspberry1/tesis_escenario2/docker-compose.yml down ; docker compose -f /home/raspberry1/tesis_escenario3/docker-compose.yml up -d ; sleep 2; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_demo_panic",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "PANIC: APAGAR TODO",
+        "group": "g_demo_btns",
+        "order": 4,
+        "width": "12",
+        "height": "2",
+        "passthru": false,
+        "label": "PANIC: APAGAR TODO",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#cc2222",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "PANIC: APAGAR TODO",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_demo_panic_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_demo_panic_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "PANIC: APAGAR TODO",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario1/docker-compose.yml down ; docker compose -f /home/raspberry1/tesis_escenario2/docker-compose.yml down ; docker compose -f /home/raspberry1/tesis_escenario3/docker-compose.yml down ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_demo_status",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "Refrescar estado",
+        "group": "g_demo_btns",
+        "order": 5,
+        "width": "12",
+        "height": "1",
+        "passthru": false,
+        "label": "Refrescar estado",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#666666",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "Refrescar estado",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_demo_status_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_demo_status_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "Refrescar estado",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker ps --format '{{.Names}}: {{.Status}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc1_up",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "UP esc1",
+        "group": "g_adv_e1",
+        "order": 1,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "UP esc1",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#2e7d32",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "UP esc1",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc1_up_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc1_up_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "UP esc1",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario1/docker-compose.yml up -d ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc1_down",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "DOWN esc1",
+        "group": "g_adv_e1",
+        "order": 2,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "DOWN esc1",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#c62828",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "DOWN esc1",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc1_down_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc1_down_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "DOWN esc1",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario1/docker-compose.yml down ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc1_rstrt",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "RESTART esc1",
+        "group": "g_adv_e1",
+        "order": 3,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "RESTART esc1",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#f9a825",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "RESTART esc1",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc1_rstrt_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc1_rstrt_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "RESTART esc1",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario1/docker-compose.yml restart ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc1_logs",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "LOGS esc1",
+        "group": "g_adv_e1",
+        "order": 4,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "LOGS esc1",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#1565c0",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "LOGS esc1",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc1_logs_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc1_logs_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "LOGS esc1",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker logs --tail 40 esc1-nodered 2>&1\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc2_up",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "UP esc2",
+        "group": "g_adv_e2",
+        "order": 1,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "UP esc2",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#2e7d32",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "UP esc2",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc2_up_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc2_up_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "UP esc2",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario2/docker-compose.yml up -d ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc2_down",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "DOWN esc2",
+        "group": "g_adv_e2",
+        "order": 2,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "DOWN esc2",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#c62828",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "DOWN esc2",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc2_down_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc2_down_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "DOWN esc2",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario2/docker-compose.yml down ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc2_rstrt",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "RESTART esc2",
+        "group": "g_adv_e2",
+        "order": 3,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "RESTART esc2",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#f9a825",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "RESTART esc2",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc2_rstrt_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc2_rstrt_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "RESTART esc2",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario2/docker-compose.yml restart ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc2_logs",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "LOGS esc2",
+        "group": "g_adv_e2",
+        "order": 4,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "LOGS esc2",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#1565c0",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "LOGS esc2",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc2_logs_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc2_logs_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "LOGS esc2",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker logs --tail 40 jp-esc2-nodered 2>&1\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc3_up",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "UP esc3",
+        "group": "g_adv_e3",
+        "order": 1,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "UP esc3",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#2e7d32",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "UP esc3",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc3_up_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc3_up_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "UP esc3",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario3/docker-compose.yml up -d ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc3_down",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "DOWN esc3",
+        "group": "g_adv_e3",
+        "order": 2,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "DOWN esc3",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#c62828",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "DOWN esc3",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc3_down_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc3_down_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "DOWN esc3",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario3/docker-compose.yml down ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc3_rstrt",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "RESTART esc3",
+        "group": "g_adv_e3",
+        "order": 3,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "RESTART esc3",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#f9a825",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "RESTART esc3",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc3_rstrt_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc3_rstrt_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "RESTART esc3",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker compose -f /home/raspberry1/tesis_escenario3/docker-compose.yml restart ; docker ps --format '{{.Names}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_esc3_logs",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "LOGS esc3",
+        "group": "g_adv_e3",
+        "order": 4,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "LOGS esc3",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#1565c0",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "LOGS esc3",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_esc3_logs_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_esc3_logs_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "LOGS esc3",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker logs --tail 40 esc3-nodered 2>&1\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "btn_adv_status",
+        "type": "ui_button",
+        "z": "demo_tab",
+        "name": "Refrescar docker ps",
+        "group": "g_adv_status",
+        "order": 1,
+        "width": "6",
+        "height": "1",
+        "passthru": false,
+        "label": "Refrescar docker ps",
+        "tooltip": "",
+        "color": "#fff",
+        "bgcolor": "#666",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "Refrescar docker ps",
+        "topicType": "str",
+        "wires": [
+            [
+                "btn_adv_status_exec"
+            ]
+        ]
+    },
+    {
+        "id": "btn_adv_status_exec",
+        "type": "exec",
+        "z": "demo_tab",
+        "name": "Refrescar docker ps",
+        "command": "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i /usr/src/node-red/.ssh/id_ed25519 raspberry1@192.168.1.10 \"docker ps --format '{{.Names}}: {{.Status}}'\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "30",
+        "winHide": false,
+        "oldrc": false,
+        "wires": [
+            [
+                "fmt_out",
+                "fmt_status"
+            ],
+            [],
+            []
+        ]
+    }
+]

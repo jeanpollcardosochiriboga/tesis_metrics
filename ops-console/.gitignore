@@ -1,0 +1,5 @@
+data/ssh/
+data/node_modules/
+data/.config*
+data/lib/
+data/.flows.json.backup
