@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Orchestrator for a metrics session.
+# Orchestrator for a metrics session. CORRE EN EL PI, no en la laptop.
 #
-# Usage:
+# Todos los colectores (recursos del Pi, router, eventos docker, salud del
+# target, despliegue, tablas de dominio) se ejecutan EN EL PI. La laptop solo
+# dispara este script por SSH (ver gateway/session.ps1) y descarga los CSV.
+#
+# Usage (en el Pi):
 #   ./session.sh start <scenario>     # start agents, create session dir
 #   ./session.sh log <event> [notes]  # append to events.csv
 #   ./session.sh status               # show running agents and current session
-#   ./session.sh end                  # stop agents, pull CSVs from Pi
+#   ./session.sh end                  # stop agents, gather CSVs (todo local al Pi)
 #
 # Reads PI_PASS and ROUTER_PASS from .env.
 set -euo pipefail
@@ -15,6 +19,25 @@ STATE_FILE="$HERE/.session_state"
 
 # --- load env ---
 [ -f "$HERE/.env" ] && set -a && . "$HERE/.env" && set +a
+
+# --- host guard ---------------------------------------------------------------
+# Este harness DEBE recolectar en el Pi, nunca en la laptop. Si se ejecuta en
+# otra máquina (p. ej. el gateway Windows/Linux por error), abortamos antes de
+# arrancar ningún colector. Se puede saltar con HARNESS_ALLOW_NON_PI=1 (solo
+# para pruebas en seco). El Pi se identifica por su IP de LAN 192.168.1.10.
+assert_running_on_pi() {
+    [ "${HARNESS_ALLOW_NON_PI:-0}" = "1" ] && return 0
+    local ips
+    ips="$( (hostname -I 2>/dev/null || ip -4 -o addr show 2>/dev/null | awk '{print $4}') | tr ' ' '\n' )"
+    if printf '%s\n' "$ips" | grep -q '^192\.168\.1\.10\(/.*\)\?$'; then
+        return 0
+    fi
+    echo "ABORT: este harness solo recolecta EN EL PI (192.168.1.10)." >&2
+    echo "       Host actual: $(hostname) [${ips//$'\n'/ }]" >&2
+    echo "       La laptop solo debe disparar la sesion por SSH (gateway/session.ps1)" >&2
+    echo "       y descargar los CSV. Para una prueba en seco: HARNESS_ALLOW_NON_PI=1." >&2
+    exit 4
+}
 
 read_state() {
     [ -f "$STATE_FILE" ] || { echo "no active session"; exit 1; }
@@ -30,9 +53,10 @@ else
     scp_pi() { SSHPASS="$PI_PASS" sshpass -e scp -o StrictHostKeyChecking=accept-new "$@"; }
 fi
 
-# Aborts if Pi<->laptop clock skew > 2 s. Without this, cross-host CSVs
-# (resources.csv from Pi vs router.csv/backend_latency.csv from laptop) cannot
-# be joined on timestamp.
+# Comprobacion de reloj. Con todos los colectores corriendo EN EL PI, los CSV
+# comparten un solo reloj (el del Pi) y el cruce por timestamp es trivial; con
+# host=127.0.0.1 esto es un self-check (~0 ms). Se conserva por seguridad: si
+# algun dia se midiera contra otro host, abortaria con desfase > 2 s.
 check_clock_offset() {
     local pi_user="$1" pi_host="$2" threshold_ms="${3:-2000}"
     local t1 t2 t3 rtt_ms off_ms
@@ -45,14 +69,14 @@ check_clock_offset() {
                 printf "%.0f %.0f\n", rtt, (off<0?-off:off) }')
     echo "[clock-check] Pi=${pi_host} rtt=${rtt_ms}ms |offset|=${off_ms}ms (threshold ${threshold_ms}ms)"
     if [ "$off_ms" -gt "$threshold_ms" ]; then
-        echo "[clock-check] ABORT: offset > ${threshold_ms}ms — restart chrony on both hosts and retry"
-        echo "             laptop: sudo systemctl restart chrony"
-        echo "             pi:     ssh ${pi_user}@${pi_host} sudo systemctl restart chrony"
+        echo "[clock-check] ABORT: offset > ${threshold_ms}ms — restart chrony and retry"
+        echo "             pi: sudo systemctl restart chrony"
         return 1
     fi
 }
 
 cmd_start() {
+    assert_running_on_pi
     local scenario="${1:-}"
     [ -z "$scenario" ] && { echo "usage: session.sh start <scenario>"; exit 2; }
     local config="$HERE/config/${scenario}.yaml"
@@ -103,8 +127,8 @@ cmd_start() {
         > "$sdir/pi_agent.pid" < /dev/null
     echo "[start] Pi agent PID $(cat "$sdir/pi_agent.pid")"
 
-    # Launch router collector (local)
-    ROUTER_PASS="$ROUTER_PASS" nohup python3 "$HERE/laptop/collect_router.py" \
+    # Launch router collector (local al Pi: SSH al OpenWrt desde el propio Pi)
+    ROUTER_PASS="$ROUTER_PASS" nohup python3 "$HERE/collectors/collect_router.py" \
         --output-dir "$sdir" \
         --host "$router_host" --user "$router_user" \
         --wifi-iface "$wifi_iface" --lan-iface "$lan_iface" --interval 5.0 \
@@ -114,7 +138,7 @@ cmd_start() {
 
     # Stream `docker events` from the Pi: container restarts, OOM kills, deaths.
     # Without this, a crashed container leaves no forensic trace.
-    nohup python3 "$HERE/laptop/docker_events_collector.py" \
+    nohup python3 "$HERE/collectors/docker_events_collector.py" \
         --output-dir "$sdir" \
         --pi-user "$pi_user" --pi-host "$pi_host" \
         >"$sdir/docker_events.log" 2>&1 &
@@ -125,7 +149,7 @@ cmd_start() {
     # the DoS scenario; the Node-RED middleware instruments the orchestrator,
     # not the target).
     if [ "$scenario" = "esc3" ]; then
-        nohup python3 "$HERE/laptop/target_health_probe.py" \
+        nohup python3 "$HERE/collectors/target_health_probe.py" \
             --output-dir "$sdir" \
             --target-url "http://${pi_host}:5000/" \
             --orchestrator-url "http://${pi_host}:1883" \
@@ -179,7 +203,7 @@ cmd_deploy() {
     # con el escenario aún abajo para que resources.csv capture el arranque).
     read_state
     echo "[deploy] midiendo despliegue de $SCENARIO en ${PI_HOST}"
-    PI_PASS="${PI_PASS:-}" python3 "$HERE/laptop/measure_deploy.py" \
+    PI_PASS="${PI_PASS:-}" python3 "$HERE/collectors/measure_deploy.py" \
         --scenario "$SCENARIO" \
         --output-dir "$SDIR" \
         --pi-host "$PI_HOST" --pi-user "$PI_USER" || \
@@ -208,7 +232,7 @@ cmd_status() {
     echo
     for f in resources.csv router.csv events.csv deploy.csv backend_latency.csv survey.csv loadtest.csv \
              auditoria_usuarios.csv email_capturas.csv email_envios.csv email_clicks.csv router_devices.csv router_resources.csv \
-             esc3_stats_snapshot.csv target_health.csv docker_events.csv; do
+             esc3_stats_snapshot.csv target_health.csv docker_events.csv dns_queries.csv; do
         local p="$SDIR/$f"
         if [ -f "$p" ]; then
             printf "  %-22s %6d rows\n" "$f" "$(wc -l <"$p")"
@@ -258,7 +282,7 @@ cmd_end() {
     esac
     if [ -n "$nodered_port" ]; then
         echo "[end] fetching /api/export_state from ${PI_HOST}:${nodered_port}"
-        python3 "$HERE/laptop/fetch_export_state.py" \
+        python3 "$HERE/collectors/fetch_export_state.py" \
             "http://${PI_HOST}:${nodered_port}" "$SDIR" || \
             echo "  (export_state fetch failed — scenario may not have the endpoint yet)"
     fi
@@ -272,6 +296,8 @@ cmd_end() {
         echo "  (no backend_latency.csv — middleware not installed yet?)"
     scp_pi "${PI_USER}@${PI_HOST}:${PI_SCN_OUT}/survey.csv" "$SDIR/survey.csv" 2>/dev/null || \
         echo "  (no survey.csv — form not used yet?)"
+    scp_pi "${PI_USER}@${PI_HOST}:${PI_SCN_OUT}/dns_queries.csv" "$SDIR/dns_queries.csv" 2>/dev/null || \
+        echo "  (no dns_queries.csv — Esc1 sin tráfico DNS activo aún?)"
 
     rm -f "$STATE_FILE"
     echo "[end] session closed. Files in $SDIR"
@@ -283,7 +309,7 @@ cmd_status_after() {
     echo
     for f in resources.csv router.csv events.csv deploy.csv backend_latency.csv survey.csv loadtest.csv \
              auditoria_usuarios.csv email_capturas.csv email_envios.csv email_clicks.csv router_devices.csv router_resources.csv \
-             esc3_stats_snapshot.csv target_health.csv docker_events.csv; do
+             esc3_stats_snapshot.csv target_health.csv docker_events.csv dns_queries.csv; do
         local p="$d/$f"
         if [ -f "$p" ]; then printf "  %-22s %6d rows\n" "$f" "$(wc -l <"$p")"; fi
     done

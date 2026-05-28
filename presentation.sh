@@ -51,7 +51,7 @@ check_clock() {
     t2=$(ssh_pi -o ConnectTimeout=6 "${PI_USER}@${PI_HOST}" 'date +%s.%N') || { echo "[clock] ABORT: SSH fallo"; return 1; }
     t3=$(date +%s.%N)
     off=$(awk -v t1="$t1" -v t2="$t2" -v t3="$t3" 'BEGIN{o=(t2-(t1+t3)/2)*1000; printf "%.0f", (o<0?-o:o)}')
-    echo "[clock] |offset| Pi<->laptop = ${off} ms (umbral 2000)"
+    echo "[clock] |offset| self-check Pi = ${off} ms (umbral 2000)"
     [ "$off" -le 2000 ] || { echo "[clock] ABORT: reinicia chrony en ambos y reintenta"; return 1; }
 }
 
@@ -81,7 +81,7 @@ EOF
     # Watcher: detecta cuando cada escenario queda listo (sea por ops-console,
     # SSH o deploy) y registra hora de inicio + tiempo de montaje.
     local key=""; [ -f "$HOME/.ssh/id_ed25519" ] && key="$HOME/.ssh/id_ed25519"
-    nohup python3 "$HERE/laptop/presentation_watcher.py" \
+    nohup python3 "$HERE/collectors/presentation_watcher.py" \
         --bitacora "$sdir/bitacora.csv" --pi-host "$PI_HOST" --pi-user "$PI_USER" \
         ${key:+--ssh-key "$key"} --interval 1.5 \
         >"$sdir/watcher.log" 2>&1 &

@@ -22,17 +22,17 @@ por SSH.
 |---|---|---|---|---|
 | §4.1 Satisfacción | SUS reducido + pedagógicas | `survey.csv` | form HTML → `/api/survey` | T8–T10 |
 | §4.2 Desempeño funcional | Latencia backend | `backend_latency.csv` | `flows_patch/metrics_middleware.js` | — |
-| §4.2 Desempeño funcional | Concurrencia real (teléfonos) | `router.csv` | `laptop/collect_router.py` | T2 |
-| §4.2 Desempeño funcional | Disponibilidad real del target (Esc3) | `target_health.csv` | `laptop/target_health_probe.py` | — |
+| §4.2 Desempeño funcional | Concurrencia real (teléfonos) | `router.csv` | `collectors/collect_router.py` | T2 |
+| §4.2 Desempeño funcional | Disponibilidad real del target (Esc3) | `target_health.csv` | `collectors/target_health_probe.py` | — |
 | §4.3 Consumo de recursos | CPU/RAM/red del Pi | `resources.csv` | `pi/collect_resources.py` | T5 |
-| §4.2/4.3 | Dispositivos del router (MAC/IP) | `router_devices.csv` | `laptop/collect_router.py` | T2 |
-| §4.3 Consumo de recursos | CPU/RAM del router | `router_resources.csv` | `laptop/collect_router.py` (`/proc`) | T3 |
+| §4.2/4.3 | Dispositivos del router (MAC/IP) | `router_devices.csv` | `collectors/collect_router.py` | T2 |
+| §4.3 Consumo de recursos | CPU/RAM del router | `router_resources.csv` | `collectors/collect_router.py` (`/proc`) | T3 |
 | §4.4 Tiempo de montaje físico | Conexión router + Pi + laptop | cronómetro (manual) | operador | — |
-| §4.4 Tiempo de despliegue | Arranque de cada escenario en el Pi | `deploy.csv` | `laptop/measure_deploy.py` (`session.sh deploy`) | — |
+| §4.4 Tiempo de despliegue | Arranque de cada escenario en el Pi | `deploy.csv` | `collectors/measure_deploy.py` (`session.sh deploy`) | — |
 | **Dominio Esc2** | Correos capturados / enviados / clicks | `email_capturas/envios/clicks.csv` | `/api/export_state` | — |
 | **Dominio Esc3** | N.º de atacantes + RPS (actual/pico) | `esc3_stats_snapshot.csv` | `/api/export_state` | — |
 | Dominio Esc1 | Auditoría de usuarios detectados | `auditoria_usuarios.csv` | `/api/export_state` | — |
-| Forense | Ciclo de vida de contenedores | `docker_events.csv` | `laptop/docker_events_collector.py` | — |
+| Forense | Ciclo de vida de contenedores | `docker_events.csv` | `collectors/docker_events_collector.py` | — |
 
 > **Carga sintética (`loadgen.py` → `loadtest.csv`) NO es métrica de Resultados.** Es una
 > prueba de estrés **opcional de laboratorio** para hallar el límite teórico del servidor;
@@ -40,6 +40,16 @@ por SSH.
 > **tablas de dominio** y las estadísticas en vivo de arriba.
 
 Las columnas "Tutor" enlazan cada métrica con las recomendaciones del §9.
+
+> **Dónde corre cada colector (decisión de arquitectura).** **Toda la recolección corre EN EL
+> PI**: `pi/collect_resources.py` se mide a sí mismo, y los scripts de `collectors/`
+> (`collect_router.py`, `target_health_probe.py`, `docker_events_collector.py`,
+> `measure_deploy.py`, `fetch_export_state.py`) los lanza `session.sh` **en el Pi**. El router se
+> lee por SSH **desde el Pi** (misma LAN), no desde la laptop. **La laptop solo visualiza**:
+> dispara la sesión por SSH (`gateway/session.ps1`) y descarga los CSV para graficar
+> (`plot_scenario.py`, `analyze.ipynb`). Ventaja: un solo reloj (el del Pi) → los CSV se cruzan por
+> timestamp sin sincronizar nada, y la medición no depende de que la laptop siga conectada.
+> `session.sh` lleva un **guard** que aborta si se ejecuta fuera del Pi.
 
 ---
 
@@ -65,8 +75,9 @@ sessions/2026-05-22_esc2/
 sessions/2026-05-22_esc3/
 ```
 
-> **Cambio pendiente**: hoy `session.sh` nombra `esc1_2026-05-22_HHMM`. Hay que
-> invertir a `2026-05-22_esc1` y quitar la hora (o moverla dentro de la carpeta).
+> **Implementado**: `session.sh` ya nombra `2026-05-22_esc1` (ver `cmd_start`,
+> formato `$(date +%Y-%m-%d)_${scenario}`); solo desambigua con la hora si ya
+> existe una carpeta del mismo día y escenario.
 
 ---
 
@@ -108,9 +119,10 @@ Dos vistas complementarias.
 - **Qué mide**: cuántas estaciones WiFi están asociadas al AP del público durante
   la demo, muestreado en el router.
 - **Por qué se eligió**: es la concurrencia verdadera del evento, no una simulación.
-- **Cómo funciona**: `collect_router.py` entra por SSH al OpenWrt cada 5 s, corre
-  `iw dev <iface> station dump` y cuenta líneas `Station`; lee `/proc/net/dev` para
-  RX/TX. Escribe `router.csv`.
+- **Cómo funciona**: `collect_router.py` corre **en el Pi** y entra por SSH al OpenWrt
+  cada 5 s (misma LAN), corre `iw dev <iface> station dump` y cuenta líneas `Station`;
+  lee `/proc/net/dev` para RX/TX. Escribe `router.csv`. (Antes corría en la laptop; se movió
+  al Pi para que la laptop solo visualice.)
 - **Veredicto**: **implementado**. Además del conteo en `router.csv`, `collect_router.py`
   ahora cruza `iw station dump` con las leases DHCP y escribe `router_devices.csv`
   (MAC, IP, hostname, señal, tráfico por equipo) — T2, §4.1.
@@ -180,7 +192,7 @@ Se separan en dos medidas, porque son cosas distintas.
   despliegue), así que **no es opcional**.
 - **Por qué se eligió**: complementa el montaje físico. Mientras (a) mide el trabajo
   del operador, (b) mide el arranque del software en el hardware de borde.
-- **Cómo funciona**: `laptop/measure_deploy.py` baja el escenario (arranque en frío),
+- **Cómo funciona**: `collectors/measure_deploy.py` baja el escenario (arranque en frío),
   lanza `docker compose up -d` en el Pi por SSH, cronometra hasta el primer HTTP 200 y
   escribe `deploy.csv` (`ts, scenario, deploy_seconds, ready, http_status`). Se invoca
   con `./session.sh deploy` con una sesión activa:
@@ -236,16 +248,31 @@ El tutor pide más datos del router (T2, T3, T3b). Hoy `router.csv` solo guarda:
   1779281860.5,18.4,52.1,128.0
   ```
 
-### 4.3. Otro dato del router pertinente a Esc1 (T3b)
+### 4.3. Otro dato del router pertinente a Esc1 (T3b) — **Implementado (2026-05-24)**
 
-Esc1 analiza DNS y construye el mapa de red. Métricas alineadas con su §3.1:
+Esc1 analiza DNS y construye el mapa de red. Métricas alineadas con su §3.1, ya
+exportadas a CSV:
 
-- **Consultas DNS por minuto** y **top de dominios** — ya fluyen por syslog hacia el
-  dashboard; basta agregarlas a CSV.
-- **Leases DHCP activas** — número de equipos que el router considera "vivos",
-  complementa el conteo de estaciones WiFi.
+- **Consultas DNS de uso activo + dominio más visitado** → `dns_queries.csv`. Un
+  nodo función cuelga de la salida 0 del "Filtro DNS" y registra solo los eventos
+  de uso ACTIVO de un servicio (`score_detectado >= 100`, descartando el tráfico
+  de fondo/CDN con score ~20), cruzando la IP con `esc1_last_devices` para añadir
+  alias y fabricante (las mismas columnas de la tabla del dashboard). Escribe a
+  `/data/metrics_out/dns_queries.csv` (append, vía nodo `file`). Columnas:
+  `ts, ip, alias, fabricante, servicio, dominio, score`. De aquí salen el **dominio
+  más visitado por los usuarios** (`group by servicio`/`dominio`) y la **tendencia**
+  temporal de consultas. Patch reproducible:
+  [add_esc1_dns_csv.py](flows_patch/add_esc1_dns_csv.py) (marcador `__DNSCSV__`).
+  > Nota: la cabecera se escribe una vez por proceso de Node-RED; al reiniciar el
+  > contenedor reaparece una fila de cabecera intermedia (inocua, el análisis la
+  > descarta filtrando `ts == 'ts'`).
+- **Leases DHCP activas** → columna `dhcp_leases` en `router.csv`
+  ([collect_router.py](collectors/collect_router.py), `_count_active_leases`): número de
+  equipos que el router considera "vivos" (expiry==0 estática, o expiry>now),
+  complementa el conteo de estaciones WiFi. No toca el Pi.
 
-> Las tres son métricas **propuestas**; su implementación es tarea posterior.
+`session.sh end` jala `dns_queries.csv` del `metrics_out` del Pi por scp y lo lista
+en `status`.
 
 ---
 
@@ -303,7 +330,7 @@ equivocado y no se capturó nada de dominio (hallazgo 4).
 | Captura router | Sí (`router.csv`) | No |
 | Latencia backend | Sí | No |
 | **Tablas de dominio** (auditoría, emails, atacantes) | **Sí** (`/api/export_state` al cerrar) | **No** |
-| Verifica reloj Pi↔laptop | Sí (aborta si > 2 s) | No |
+| Self-check de reloj del Pi | Sí (aborta si > 2 s; ya no hay desfase Pi↔laptop) | No |
 
 **Regla**: para obtener datos analizables (auditoría de Esc1, correos de Esc2,
 atacantes de Esc3) hay que usar **`session.sh`**. El modo presentación solo sirve
@@ -329,7 +356,7 @@ para vigilar recursos durante una jornada completa.
 | Métrica general consolidada | `consolidado_general.csv` | OK | `plot_scenario.py --general` (T1) |
 | Carga sintética (knee) | `loadtest.csv` | Lab/opcional | Fuera de Resultados |
 | Tabla de películas Esc2 | — | Falta | Pendiente (añadir a export_state) |
-| Datos DNS del router (Esc1) | — | Falta | Pendiente decisión (T3b) |
+| Datos DNS del router (Esc1) | `dns_queries.csv` + `dhcp_leases` en `router.csv` | OK | Implementado (T3b, §4.3) |
 
 ---
 
@@ -338,7 +365,7 @@ para vigilar recursos durante una jornada completa.
 1. **`deploy_seconds` erróneo (§4.4) — RESUELTO** — `presentation_watcher.py` lo
    calculaba contra el `StartedAt` del contenedor; si el contenedor ya estaba arriba
    daba valores absurdos (925 s, 1783 s el 20-may). **Solución implementada**:
-   `laptop/measure_deploy.py` (`session.sh deploy`) levanta el escenario en frío y
+   `collectors/measure_deploy.py` (`session.sh deploy`) levanta el escenario en frío y
    cronometra hasta el primer HTTP 200 → `deploy.csv` (ver §3.5b). El montaje físico
    va por cronómetro manual del operador. Queda **no** usar el `deploy_seconds` del
    watcher para esta métrica.
@@ -356,16 +383,25 @@ para vigilar recursos durante una jornada completa.
 5. **Criterio del "knee" disperso — RESUELTO** — vivía solo en el notebook. **Hecho**:
    `loadgen.py` marca el knee en `loadtest.csv`. *Nota:* `loadgen` quedó como prueba de
    **laboratorio opcional, fuera del alcance de Resultados** (ver §3.3b).
-6. **Esc3: "caído" visual desacoplado de la salud real** — el estado rojo/caído que ve
-   el público lo acciona el contador de presiones (motor de fases), no la salud real del
-   target. De ahí la ambigüedad observada en pruebas (caída sin flood real; flood real
-   sin caída visual). **Decisión**: para Resultados se reporta `target_health.csv` (salud
-   real) + RPS (`esc3_stats_snapshot.csv`); el flood real lo dispara el **operador**. El
-   estado visual queda solo como recurso pedagógico, no como dato.
+6. **Esc3: "caído" visual desacoplado de la salud real — MEJORADO (2026-05-24)** — el
+   estado rojo/caído lo acciona el contador de presiones (motor de fases). Antes el banner
+   quedaba **pegado en CAÍDO** (el `pressCount` nunca decaía y la protección no estaba
+   ligada a la recuperación) y el target **no se caía de verdad** (backlog por defecto de
+   128 → recuperación de minutos). **Correcciones implementadas**:
+   - `esc3-fn-phase` (marcador `__RECOVERY__`, en `flows_patch/add_phase_engine.py`):
+     bajo protección el banner sigue la **salud real** (`flow.lastProbeRt`) y vuelve a
+     ONLINE/PROTEGIDO cuando el target responde; sin protección, `pressCount` decae.
+   - `target/app.py` (en el Pi): `/reservar` con `sleep(0.2)` + `request_queue_size=12`
+     (backlog acotado) → el target se cae de verdad bajo flood y **se recupera en ~3 s**
+     al activar el rate-limit del proxy. `attacker/attacker.py`: `/start` resetea el
+     `target_url` al directo (ciclo repetible).
+   - Verificado: `target_health.csv` muestra `idle`(200) → `ataque`(timeout) →
+     `protegido`(200 estable). **Decisión vigente**: para Resultados se reporta
+     `target_health.csv` (salud real) + RPS; el flood real lo dispara el **operador**.
 
-Estado de las acciones del tutor: **T2, T3, T6, T7 implementados** (ver §§4–7).
-Pendientes: **T3b** (datos DNS del router — requiere decisión, ver §4.3) y **T5**
-(protocolo de medición aislada — es metodología, ya documentada en §5).
+Estado de las acciones del tutor: **T2, T3, T3b, T6, T7 implementados** (ver §§4–7).
+Pendiente: **T5** (protocolo de medición aislada — es metodología, ya documentada
+en §5).
 *(T4 — disco — descartado: sin valor analítico.)*
 
 ---
@@ -434,12 +470,82 @@ se documentan aquí porque condicionan qué y cómo se puede medir.
 - **Recomendación del tutor**: dejar de mostrar el dominio en una **esquina** del
   dashboard y crear una **página aparte con una tabla que se actualice** conforme a los
   dominios que se van visitando.
-- **Por pulir**: rendimiento con alta concurrencia (probablemente el re-render del grafo
-  D3 en cada evento DNS) y corregir el peso de Facebook.
-- **Estado**: pendiente de rediseño. Afecta el `flows.json` y la UI de Esc1, no el harness.
-- **Relación con la métrica DNS (T3b)**: **por decidir** — la nueva tabla podría además
-  registrar dominios/consultas a CSV y resolver de paso el T3b, o quedarse solo como
-  arreglo de UI. Se decide más adelante.
+- **Implementado (2026-05-24)** — parche `flows_patch/fix_esc1_ranking_table.py`, desplegado
+  vía API Admin (`POST http://192.168.1.10:1881/flows`):
+  - **Fix del ranking de Facebook**: el tráfico de **fondo/CDN** (fbcdn, fbsbx, graph.facebook,
+    akamai, cloudfront, etc.) se clasifica como "Tráfico de fondo" con score bajo (20), así que
+    ya **no** etiqueta al dispositivo como Facebook ni alimenta el conteo. Solo el uso ACTIVO
+    (facebook.com/m.facebook.com, etc.) cuenta. *(Nota: los CDN de Instagram/WhatsApp/TikTok
+    —cdninstagram, whatsapp.net, tiktokv— siguen contando como activos por estar más ligados al
+    uso real de la app; revisable si se quiere afinar.)*
+  - **Decaimiento**: la etiqueta de un dispositivo vuelve a "En espera de tráfico útil…" tras
+    ~20 s sin tráfico activo (barrido cada 5 s sobre `esc1_active_map`; NO se usa `global.keys()`
+    porque las claves con IP se anidan por la notación de puntos de Node-RED).
+  - **Tabla de dominios (recomendación del tutor)**: nueva pestaña **"ESC1 Dominios"** con una
+    tabla HTML (`ui_template`) que lista los servicios/dominios más consultados, refrescada cada 2 s.
+- **Pendiente**: rendimiento del grafo D3 con >20 usuarios (throttle/render incremental) — **no
+  abordado** en esta iteración por decisión (se priorizó la tabla nueva).
+
+#### 11.1.1. Limitación conocida — DNS privado / DoH oculta el tráfico
+
+Los teléfonos Android (y navegadores) con **DNS privado / DNS-over-HTTPS (DoH)** o apps tipo
+**AdGuard** **no envían sus consultas DNS al router**: las cifran hacia un resolver externo
+(`dns.google`, `cloudflare-dns.com`, AdGuard, etc.) por el puerto 443. Como Esc1 monitorea el
+**syslog DNS del router (dnsmasq, puerto 5515)**, **el tráfico de esos equipos no aparece** en el
+grafo ni en la tabla de dominios. Es una limitación inherente al método (monitoreo pasivo de DNS en
+el router), no un bug. Para la demo: se observa el tráfico de los equipos que usan el DNS del router
+(la mayoría por defecto); los que fuerzan DoH/AdGuard quedan como "En espera de tráfico útil…". Se
+documenta como alcance metodológico del Esc1.
+
+#### 11.1.2. Métricas internas de Esc1 — solo documentación, no se muestran al público
+
+La pestaña **"ESC1 Metricas"** del dashboard **no se expone al público** (no está en la navegación
+01–05 del diseño). Esas métricas son de instrumentación/diagnóstico, no de la demo, y se **documentan
+aquí** (igual que el resto del harness `tesis_metrics`), sin mostrarlas en pantalla. Se acumulan en
+`global.esc1_metrics` desde la función "Filtro DNS":
+
+| Métrica | Significado |
+|---|---|
+| `dns_events_total` / `dns_events_validos` / `dns_events_descartados` | eventos DNS recibidos / parseados OK / descartados (ruido) |
+| `dns_privado_detectado_total` | consultas a resolvers DoH/privados (señal de la limitación 11.1.1) |
+| `no_autorizado_detectado_total` | dominios de categorías bloqueadas (adulto/piratería) |
+| `dns_ipv6_total` / `_mapped` / `_unmapped` | eventos IPv6 y su correlación a IPv4 |
+| `sim_tests_total` / `sim_tests_ok` | pruebas de clasificación (cuando se inyecta `expected_service`) |
+| `ui_push_total` | refrescos enviados a la UI |
+
+> Estado de la pestaña "ESC1 Metricas": se deja **oculta** del flujo de demo (reutilizable a futuro);
+> su valor es documental, no de presentación.
+
+#### 11.1.3. Clasificación de servicios, fabricante y guion para el público
+
+La tabla "06_ Dominios visitados" muestra, **por dispositivo**, el alias registrado (o el hostname)
++ IP + **fabricante** + el **sitio que consulta ahora**. La dinámica de la demo es que el operador le
+diga a cada participante qué está visitando su teléfono.
+
+**Clasificación (función "Filtro DNS"):** se etiqueta el dominio al servicio de uso activo
+(Facebook, Instagram, WhatsApp, TikTok, YouTube, **Telegram**, etc., score 110). El **tráfico de
+fondo/infra** (CDN, push, analítica y SDKs de ads como **ByteDance/Pangle** `ibytedtos`,
+`byteoversea`; Google `gstatic`/`googleapis`/`1e100`; Meta `fbcdn`/`fbsbx`) se marca como
+**"Tráfico de fondo"** (score bajo) y **no** etiqueta al dispositivo. La etiqueta **decae** a
+"En espera…" tras ~20 s sin tráfico activo.
+
+**Fabricante:** se infiere del **hostname** (Samsung/Honor/Huawei/Xiaomi-Redmi/Apple/Motorola/…),
+porque Android/iOS **aleatorizan el MAC** y el OUI suele dar "Desconocido".
+
+**Limitaciones honestas (qué explicar al público):**
+- Los teléfonos **hablan con muchos servicios en segundo plano** (notificaciones, publicidad,
+  analítica) aunque no estés usando esa app — por eso a veces aparecía "siempre TikTok/Facebook"
+  estando el equipo inactivo. **Eso mismo es la lección de privacidad**: tus apps envían datos sin
+  que lo notes. Al navegar activamente, el sitio dominante refleja lo que haces.
+- El DNS ve **infraestructura compartida**: Instagram/WhatsApp usan servidores de Meta/Google, así
+  que puede haber ambigüedad puntual. Se mitiga mandando esa infra a "fondo", pero no es perfecto.
+- Equipos con **DNS privado/DoH/AdGuard** no aparecen (ver §11.1.1).
+- Mensaje sugerido al público: *"El sistema ve la huella de red de tu teléfono. Aunque no estés en
+  una app, tu celular ya está hablando con sus servidores. Cuando navegas, vemos a dónde."*
+- **Relación con la métrica DNS (T3b)**: **resuelto** — el mismo flujo que alimenta la tabla
+  registra ahora las consultas de uso activo a `dns_queries.csv` (`ts, ip, alias, fabricante,
+  servicio, dominio, score`), cerrando el T3b. De ese CSV salen el **dominio más visitado** y
+  la tendencia temporal. Ver §4.3 y [add_esc1_dns_csv.py](flows_patch/add_esc1_dns_csv.py).
 
 ### 11.2. Esc3 — control del ataque y realismo de la caída
 
@@ -447,11 +553,17 @@ se documentan aquí porque condicionan qué y cómo se puede medir.
   del público son la **ilusión visual** (creen que tumban el servidor). La caída y las
   métricas reales (`target_health.csv` + RPS) se generan cuando el operador ataca.
 - **Por qué (recomendación honesta)**: el target es un Flask de **un solo hilo con ruta
-  bloqueante** (~0.5 s por petición). Tumbarlo requiere **concurrencia sostenida**, que
-  aporta el flood `asyncio` del `esc3-attacker` (30–50 workers) que dispara el operador.
-  Los **toques del público son esporádicos**, no sostenidos, y no todos participan, así
-  que **no tumbarían el servidor de forma confiable**. La caída controlada por el operador
-  es reproducible y medible; la interacción del público es un recurso pedagógico.
+  bloqueante** (`/reservar`, `sleep(0.2)` → capacidad ~5 req/s, `threaded=False`) y con
+  **backlog de escucha acotado (`request_queue_size=12`)**. Tumbarlo requiere
+  **concurrencia sostenida**, que aporta el flood `asyncio` del `esc3-attacker`
+  (`WORKERS=30`) que dispara el operador. Los **toques del público son esporádicos**, no
+  sostenidos, así que **no tumbarían el servidor de forma confiable**. La caída controlada
+  por el operador es reproducible y medible.
+- **Realismo afinado (2026-05-24)**: el backlog acotado hace que el target se caiga de
+  verdad bajo flood (probe en timeout) **y** se recupere en ~3 s al activar la protección
+  (rate-limit del proxy a 1 r/s, por debajo de la capacidad). Sin acotar el backlog, la
+  cola por defecto (128) tardaba minutos en drenar y la recuperación no se apreciaba.
+  Ver §9, hallazgo 6.
 - **Encuadre para la tesis**: se presenta como una **carga controlada que demuestra el
   agotamiento de hilos** (§3.4), no como un ataque real de la audiencia. El "caído" visual
   por contador de presiones es animación, no dato (ver §9, hallazgo 6).
