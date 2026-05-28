@@ -42,7 +42,9 @@ function Invoke-PiSession {
     $quoted = ($SessionArgs | ForEach-Object { "'$($_ -replace "'", "'\''")'" }) -join ' '
     $remote = "cd $PiRepo && ./session.sh $quoted"
     & ssh -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new $Target $remote
-    return $LASTEXITCODE
+    # NOTA: no envolver llamadas a esta funcion en `(...)`: PowerShell capturaria
+    # la salida de ssh como pipeline y dejaria la consola en blanco. Llamar directo
+    # y usar $LASTEXITCODE.
 }
 
 function Get-LatestSessionId {
@@ -65,13 +67,14 @@ function Pull-Session {
 }
 
 switch ($Command) {
-    'start'  { exit (Invoke-PiSession (@('start') + $Rest)) }
-    'deploy' { exit (Invoke-PiSession @('deploy')) }
-    'log'    { exit (Invoke-PiSession (@('log')    + $Rest)) }
-    'status' { exit (Invoke-PiSession @('status')) }
+    'start'  { Invoke-PiSession (@('start') + $Rest); exit $LASTEXITCODE }
+    'deploy' { Invoke-PiSession @('deploy');           exit $LASTEXITCODE }
+    'log'    { Invoke-PiSession (@('log')    + $Rest); exit $LASTEXITCODE }
+    'status' { Invoke-PiSession @('status');           exit $LASTEXITCODE }
     'end'    {
         $id = Get-LatestSessionId
-        $rc = Invoke-PiSession @('end')
+        Invoke-PiSession @('end')
+        $rc = $LASTEXITCODE
         Pull-Session -Id $id
         exit $rc
     }
